@@ -267,32 +267,72 @@ input[type="file"]{display:none;}
         </div>
 
         <!-- ── EMPLOYEE PANEL ── -->
-        <div id="authCrewPanel" style="display:none;padding:26px 24px;">
-          <!-- Step 1: Enter email -->
-          <div id="empStep1">
-            <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px;">Employee login</div>
-            <div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.5;">Enter your email address. If you're registered, we'll send you a temporary PIN to log in.</div>
-            <div class="fgr" style="margin-bottom:12px;"><label>Your email</label><input id="empEmailInput" type="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')empRequestPin()"></div>
-            <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empRequestPin()">Send me my PIN</button>
-            <div id="empErr1" style="display:none;color:var(--red);font-size:12px;margin-top:10px;text-align:center;font-weight:600;background:#FDE8E8;padding:8px;border-radius:var(--rs);"></div>
+        <div id="authCrewPanel" style="display:none;">
+          <!-- Employee mode tabs: Login / Sign Up -->
+          <div style="display:flex;border-bottom:1px solid var(--border);">
+            <button id="empTabLogin" onclick="empSwitchTab('login')" style="flex:1;padding:11px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:var(--navy);color:#fff;">Log in</button>
+            <button id="empTabSignup" onclick="empSwitchTab('signup')" style="flex:1;padding:11px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:#F1F5F9;color:var(--t2);">Sign up</button>
           </div>
-          <!-- Step 2: Enter PIN sent to email -->
-          <div id="empStep2" style="display:none;">
-            <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px;">Check your email</div>
-            <div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.5;" id="empStep2Hint">We sent a temporary PIN to your email. Enter it below to log in.</div>
-            <input id="empPinInput" inputmode="numeric" maxlength="6" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;" style="width:100%;font-size:28px;letter-spacing:.35em;text-align:center;padding:14px;border:2px solid var(--border);border-radius:var(--rs);font-family:inherit;margin-bottom:12px;" onkeydown="if(event.key==='Enter')empVerifyPin()">
-            <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empVerifyPin()">Log in</button>
-            <button onclick="empBackToStep1()" style="width:100%;margin-top:8px;font-size:11px;color:var(--t3);background:none;border:none;cursor:pointer;text-decoration:underline;">&#8592; Use a different email</button>
-            <div id="empErr2" style="display:none;color:var(--red);font-size:12px;margin-top:10px;text-align:center;font-weight:600;background:#FDE8E8;padding:8px;border-radius:var(--rs);"></div>
-          </div>
-          <!-- Step 3: If they have a permanent PIN set, just ask that -->
-          <div id="empStep3" style="display:none;">
-            <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px;">Welcome back!</div>
-            <div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.5;" id="empStep3Hint">Enter your personal PIN to log in.</div>
-            <input id="empPermPinInput" inputmode="numeric" maxlength="6" placeholder="&#8226;&#8226;&#8226;&#8226;" style="width:100%;font-size:28px;letter-spacing:.35em;text-align:center;padding:14px;border:2px solid var(--border);border-radius:var(--rs);font-family:inherit;margin-bottom:12px;" onkeydown="if(event.key==='Enter')empVerifyPermPin()">
-            <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empVerifyPermPin()">Log in</button>
-            <button onclick="empForgotPermPin()" style="width:100%;margin-top:8px;font-size:11px;color:var(--t3);background:none;border:none;cursor:pointer;text-decoration:underline;">Forgot PIN? Send me a temporary one</button>
-            <div id="empErr3" style="display:none;color:var(--red);font-size:12px;margin-top:10px;text-align:center;font-weight:600;background:#FDE8E8;padding:8px;border-radius:var(--rs);"></div>
+          <div style="padding:22px 24px;">
+
+            <!-- ── LOGIN FLOW ── -->
+            <div id="empLoginFlow">
+              <!-- Step 1: Enter email -->
+              <div id="empStep1">
+                <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px;">Welcome back</div>
+                <div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.5;">Enter your email to receive your PIN, or enter your permanent PIN if you've already set one.</div>
+                <div class="fgr" style="margin-bottom:12px;"><label>Your email</label><input id="empEmailInput" type="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')empRequestPin()"></div>
+                <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empRequestPin()">Continue</button>
+                <div id="empErr1" style="display:none;color:var(--red);font-size:12px;margin-top:10px;text-align:center;font-weight:600;background:#FDE8E8;padding:8px;border-radius:var(--rs);"></div>
+              </div>
+              <!-- Step 2: Show PIN on screen (no email needed) -->
+              <div id="empStep2" style="display:none;">
+                <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px;">Your temporary PIN</div>
+                <div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.5;" id="empStep2Hint">Enter this PIN to log in:</div>
+                <input id="empPinInput" inputmode="numeric" maxlength="6" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;" style="width:100%;font-size:28px;letter-spacing:.35em;text-align:center;padding:14px;border:2px solid var(--border);border-radius:var(--rs);font-family:inherit;margin-bottom:12px;" onkeydown="if(event.key==='Enter')empVerifyPin()">
+                <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empVerifyPin()">Log in</button>
+                <button onclick="empBackToStep1()" style="width:100%;margin-top:8px;font-size:11px;color:var(--t3);background:none;border:none;cursor:pointer;text-decoration:underline;">&#8592; Use a different email</button>
+                <div id="empErr2" style="display:none;color:var(--red);font-size:12px;margin-top:10px;text-align:center;font-weight:600;background:#FDE8E8;padding:8px;border-radius:var(--rs);"></div>
+              </div>
+              <!-- Step 3: Returning employee with permanent PIN -->
+              <div id="empStep3" style="display:none;">
+                <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px;">Welcome back! &#128075;</div>
+                <div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.5;" id="empStep3Hint">Enter your personal PIN to log in.</div>
+                <input id="empPermPinInput" inputmode="numeric" maxlength="6" placeholder="&#8226;&#8226;&#8226;&#8226;" style="width:100%;font-size:28px;letter-spacing:.35em;text-align:center;padding:14px;border:2px solid var(--border);border-radius:var(--rs);font-family:inherit;margin-bottom:12px;" onkeydown="if(event.key==='Enter')empVerifyPermPin()">
+                <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empVerifyPermPin()">Log in</button>
+                <button onclick="empForgotPermPin()" style="width:100%;margin-top:8px;font-size:11px;color:var(--t3);background:none;border:none;cursor:pointer;text-decoration:underline;">Forgot PIN? Send me a temporary one</button>
+                <div id="empErr3" style="display:none;color:var(--red);font-size:12px;margin-top:10px;text-align:center;font-weight:600;background:#FDE8E8;padding:8px;border-radius:var(--rs);"></div>
+              </div>
+            </div>
+
+            <!-- ── SIGN UP FLOW ── -->
+            <div id="empSignupFlow" style="display:none;">
+              <!-- Sign up Step A: enter details -->
+              <div id="empSignupStepA">
+                <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px;">Create your account</div>
+                <div style="font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.5;">Enter your details. Your manager will be notified and you'll get a PIN to log in right away.</div>
+                <div class="fg" style="margin-bottom:10px;">
+                  <div class="fgr"><label>First name *</label><input id="empSuFirst" placeholder="First name"></div>
+                  <div class="fgr"><label>Last name</label><input id="empSuLast" placeholder="Last name"></div>
+                  <div class="fgr fgg"><label>Email *</label><input id="empSuEmail" type="email" placeholder="you@email.com"></div>
+                  <div class="fgr fgg"><label>Phone</label><input id="empSuPhone" type="tel" placeholder="(###) ###-####"></div>
+                </div>
+                <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empSignUp()">Create account &amp; get my PIN</button>
+                <div id="empSuErr" style="display:none;color:var(--red);font-size:12px;margin-top:10px;text-align:center;font-weight:600;background:#FDE8E8;padding:8px;border-radius:var(--rs);"></div>
+              </div>
+              <!-- Sign up Step B: show their generated PIN -->
+              <div id="empSignupStepB" style="display:none;">
+                <div style="text-align:center;margin-bottom:14px;">
+                  <div style="font-size:36px;margin-bottom:6px;">&#127881;</div>
+                  <div style="font-size:14px;font-weight:800;color:var(--navy);">Account created!</div>
+                  <div style="font-size:11px;color:var(--t2);margin-top:4px;">Your temporary PIN is:</div>
+                </div>
+                <div id="empSuPinDisplay" style="font-size:42px;font-weight:900;letter-spacing:.3em;text-align:center;color:var(--navy);background:var(--goldl);border:2px solid var(--gold);border-radius:var(--r);padding:16px;margin-bottom:14px;"></div>
+                <div style="font-size:11px;color:var(--t2);text-align:center;margin-bottom:16px;line-height:1.6;">Write this down! You'll use it to log in. Once you're in, you can set your own permanent PIN.</div>
+                <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="empSignupGoLogin()">Log in with this PIN &#8594;</button>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -4819,12 +4859,85 @@ var authProfile = null;
 var timeEntries = ld('timeEntries', []);
 var availability = ld('availability', []);
 
-// Temp PIN store: { email -> { pin, expires } } — kept in sessionStorage only
+// Temp PIN store (session only)
 function empTempPins(){ try{ return JSON.parse(sessionStorage.getItem('_empTempPins')||'{}'); }catch(e){ return {}; } }
 function empSaveTempPins(obj){ sessionStorage.setItem('_empTempPins', JSON.stringify(obj)); }
 function empGenPin(){ return String(Math.floor(100000 + Math.random() * 900000)).substring(0,6); }
 
 var _empLoginEmail = '';
+var _empGeneratedPin = '';
+
+function empSwitchTab(tab){
+  var loginTab=sel('empTabLogin'), signupTab=sel('empTabSignup');
+  var loginFlow=sel('empLoginFlow'), signupFlow=sel('empSignupFlow');
+  if(tab==='login'){
+    if(loginTab){loginTab.style.background='var(--navy)';loginTab.style.color='#fff';}
+    if(signupTab){signupTab.style.background='#F1F5F9';signupTab.style.color='var(--t2)';}
+    if(loginFlow)loginFlow.style.display='block';
+    if(signupFlow)signupFlow.style.display='none';
+  } else {
+    if(signupTab){signupTab.style.background='var(--navy)';signupTab.style.color='#fff';}
+    if(loginTab){loginTab.style.background='#F1F5F9';loginTab.style.color='var(--t2)';}
+    if(signupFlow)signupFlow.style.display='block';
+    if(loginFlow)loginFlow.style.display='none';
+    var stepA=sel('empSignupStepA'),stepB=sel('empSignupStepB');
+    if(stepA)stepA.style.display='block';
+    if(stepB)stepB.style.display='none';
+  }
+}
+
+async function empSignUp(){
+  var errEl=sel('empSuErr'); if(errEl)errEl.style.display='none';
+  var first=(gv('empSuFirst')||'').trim();
+  var last=(gv('empSuLast')||'').trim();
+  var email=(gv('empSuEmail')||'').trim().toLowerCase();
+  var phone=(gv('empSuPhone')||'').trim();
+  if(!first){if(errEl){errEl.textContent='Please enter your first name.';errEl.style.display='block';}return;}
+  if(!email||email.indexOf('@')<1){if(errEl){errEl.textContent='Please enter a valid email.';errEl.style.display='block';}return;}
+  if(!_sbClient){if(errEl){errEl.textContent='Connection error. Try again.';errEl.style.display='block';}return;}
+  // Check if already registered
+  try{
+    var chk=await _sbClient.from('app_crew').select('id,permanent_pin,pin,first_name').ilike('email',email).maybeSingle();
+    if(chk.data){
+      _empLoginEmail=email;
+      if(chk.data.permanent_pin&&chk.data.pin){
+        var hint=sel('empStep3Hint');if(hint)hint.textContent='Welcome back, '+(chk.data.first_name||first)+'! Enter your PIN to log in.';
+        empSwitchTab('login');
+        var s1=sel('empStep1'),s3=sel('empStep3');if(s1)s1.style.display='none';if(s3)s3.style.display='block';
+      } else {
+        empSwitchTab('login');
+        empGenerateAndShowPin(email,chk.data.first_name||first);
+      }
+      return;
+    }
+  }catch(e){}
+  var pin=empGenPin();
+  _empGeneratedPin=pin;
+  _empLoginEmail=email;
+  try{
+    var ins=await _sbClient.from('app_crew').insert({
+      id:uid(),email:email,first_name:first,last_name:last,
+      phone:phone,role:'Crew member',status:'active',
+      pin:pin,permanent_pin:false,
+      temp_pin:pin,temp_pin_expires:new Date(Date.now()+15*60*1000).toISOString()
+    });
+    if(ins.error){if(errEl){errEl.textContent='Error: '+(ins.error.message||'try again');errEl.style.display='block';}return;}
+  }catch(e){if(errEl){errEl.textContent='Error creating account. Try again.';errEl.style.display='block';}return;}
+  crew.push({id:uid(),first:first,last:last,phone:phone,email:email,role:'Crew member',status:'active',pin:pin,permanent_pin:false,hourly_rate:0});
+  sv('crew',crew);
+  var pinDisplay=sel('empSuPinDisplay');if(pinDisplay)pinDisplay.textContent=pin;
+  var stepA=sel('empSignupStepA'),stepB=sel('empSignupStepB');
+  if(stepA)stepA.style.display='none';
+  if(stepB)stepB.style.display='block';
+}
+
+function empSignupGoLogin(){
+  empSwitchTab('login');
+  var s1=sel('empStep1'),s2=sel('empStep2');if(s1)s1.style.display='none';if(s2)s2.style.display='block';
+  var hint=sel('empStep2Hint');
+  if(hint)hint.innerHTML='Your temporary PIN is:<br><strong style="font-size:32px;letter-spacing:.25em;color:var(--navy);display:block;text-align:center;margin:10px 0;background:var(--goldl);padding:12px;border-radius:var(--rs);">'+_empGeneratedPin+'</strong><span style="font-size:10px;color:var(--t3);">Enter it below to log in.</span>';
+  setv('empPinInput',_empGeneratedPin);
+}
 
 function authShowErr(msg){
   var el = sel('authErr'); if(!el) return;
@@ -5020,48 +5133,34 @@ async function empRequestPin(){
   empClearErr(1);
   var email = (gv('empEmailInput')||'').trim().toLowerCase();
   if (!email){ empShowErr(1,'Please enter your email address.'); return; }
-  if (!_sbClient){ empShowErr(1,'Connecting… try again in a moment.'); return; }
-  // Look up employee in app_crew by email
+  if (!_sbClient){ empShowErr(1,'Connection error. Try again.'); return; }
   var res = await _sbClient.from('app_crew').select('*').ilike('email', email).maybeSingle();
   if (!res.data || res.error){
-    empShowErr(1,'No employee account found for that email. Ask your manager to add you first.');
+    empShowErr(1,'No account found. Use the Sign up tab to create one!');
     return;
   }
   var empRec = res.data;
   _empLoginEmail = email;
-  // If they already have a permanent PIN set, skip to step 3
-  if (empRec.pin && empRec.pin.length >= 4 && empRec.permanent_pin){
+  if (empRec.permanent_pin && empRec.pin && empRec.pin.length >= 4){
     var hint = sel('empStep3Hint');
-    if (hint) hint.textContent = 'Welcome back, ' + (empRec.first_name||'') + '! Enter your personal PIN to log in.';
+    if (hint) hint.textContent = 'Welcome back, ' + (empRec.first_name||'') + '! Enter your personal PIN.';
     sel('empStep1').style.display='none';
     sel('empStep3').style.display='block';
     return;
   }
-  // Generate and send temp PIN via Supabase magic link / store in DB
-  var tempPin = empGenPin();
-  var expires = Date.now() + 15 * 60 * 1000; // 15 min
-  var pins = empTempPins(); pins[email] = { pin: tempPin, expires: expires }; empSaveTempPins(pins);
-  // Store temp PIN in Supabase so it works across devices
-  try{
-    await _sbClient.from('app_crew').update({ temp_pin: tempPin, temp_pin_expires: new Date(expires).toISOString() }).ilike('email', email);
-  }catch(e){}
-  // Send email via Supabase (using their built-in magic OTP)
-  // Since Supabase doesn't do custom email easily without edge functions,
-  // we use their OTP system but also show pin in an alert for now, with a note
-  var sentOk = false;
-  try{
-    var otpRes = await _sbClient.auth.signInWithOtp({ email: email, options:{ shouldCreateUser: false } });
-    sentOk = !otpRes.error;
-  }catch(e){}
-  // Show the PIN in a prominent way since email relay depends on Supabase config
+  empGenerateAndShowPin(email, empRec.first_name||'');
+}
+
+async function empGenerateAndShowPin(email, firstName){
+  var pin = empGenPin();
+  _empGeneratedPin = pin;
+  var expires = new Date(Date.now()+15*60*1000).toISOString();
+  var localExpires = Date.now()+15*60*1000;
+  try{ await _sbClient.from('app_crew').update({temp_pin:pin, temp_pin_expires:expires}).ilike('email',email); }catch(e){}
+  var pins = empTempPins(); pins[email]={pin:pin,expires:localExpires}; empSaveTempPins(pins);
   var hint = sel('empStep2Hint');
-  if (hint){
-    if (sentOk){
-      hint.textContent = 'A temporary PIN has been sent to ' + email + '. It expires in 15 minutes.';
-    } else {
-      hint.innerHTML = 'Your temporary PIN is: <strong style="font-size:18px;letter-spacing:.2em;color:var(--navy);">'+tempPin+'</strong><br><span style="font-size:10px;color:var(--t3);">(Email sending requires Supabase email config — see setup note)</span>';
-    }
-  }
+  if(hint) hint.innerHTML = 'Hi '+(firstName||'')+', your temporary PIN is:<br><strong style="font-size:36px;letter-spacing:.25em;color:var(--navy);display:block;text-align:center;margin:10px 0;background:var(--goldl);padding:14px;border-radius:var(--rs);">'+pin+'</strong><span style="font-size:10px;color:var(--t3);">Enter it below. Expires in 15 min.</span>';
+  setv('empPinInput','');
   sel('empStep1').style.display='none';
   sel('empStep2').style.display='block';
 }
@@ -5069,30 +5168,25 @@ async function empRequestPin(){
 async function empVerifyPin(){
   empClearErr(2);
   var entered = (gv('empPinInput')||'').trim();
-  if (!entered){ empShowErr(2,'Please enter the PIN from your email.'); return; }
+  if (!entered){ empShowErr(2,'Please enter the PIN shown above.'); return; }
   var email = _empLoginEmail;
-  // Check against DB first
   var res = await _sbClient.from('app_crew').select('*').ilike('email', email).maybeSingle();
   if (!res.data){ empShowErr(2,'Account not found.'); return; }
   var rec = res.data;
   var now = Date.now();
   var dbPin = rec.temp_pin, dbExpires = rec.temp_pin_expires ? new Date(rec.temp_pin_expires).getTime() : 0;
-  // Also check session storage fallback
   var localPins = empTempPins();
   var localEntry = localPins[email];
   var validLocal = localEntry && localEntry.pin === entered && now < localEntry.expires;
   var validDb = dbPin && dbPin === entered && now < dbExpires;
   if (!validLocal && !validDb){
-    empShowErr(2,'Incorrect or expired PIN. Please try again or go back to request a new one.');
+    empShowErr(2,'Incorrect PIN. Check the PIN shown above and try again.');
     return;
   }
-  // Clear temp pin
-  try{ await _sbClient.from('app_crew').update({ temp_pin: null, temp_pin_expires: null }).ilike('email', email); }catch(e){}
+  try{ await _sbClient.from('app_crew').update({temp_pin:null, temp_pin_expires:null}).ilike('email',email); }catch(e){}
   var pins = empTempPins(); delete pins[email]; empSaveTempPins(pins);
-  // Log in as crew
   authProfile = rec; authProfile.__role = 'crew';
   authHideGate();
-  // If no permanent PIN, prompt them to set one
   if (!rec.permanent_pin || !rec.pin){ empPromptSetPin(); } else { authEnterCrewPortal(); }
 }
 
@@ -5103,7 +5197,7 @@ async function empVerifyPermPin(){
   var email = _empLoginEmail;
   var res = await _sbClient.from('app_crew').select('*').ilike('email', email).maybeSingle();
   if (!res.data || res.data.pin !== entered || !res.data.permanent_pin){
-    empShowErr(3,'Incorrect PIN.'); return;
+    empShowErr(3,'Incorrect PIN. Try again or tap "Forgot PIN?" below.'); return;
   }
   authProfile = res.data; authProfile.__role = 'crew';
   authHideGate();
@@ -5112,13 +5206,12 @@ async function empVerifyPermPin(){
 
 function empForgotPermPin(){
   sel('empStep3').style.display='none';
-  // Re-send temp pin flow
   setv('empEmailInput', _empLoginEmail);
   sel('empStep1').style.display='block';
+  empClearErr(1); empClearErr(3);
 }
 
 function empPromptSetPin(){
-  // Show a modal for employee to set their permanent PIN
   setv('empNewPin',''); setv('empNewPinConfirm','');
   var err = sel('empPinSetupErr'); if(err) err.style.display='none';
   openMod('empPinSetupModal');
@@ -5130,15 +5223,12 @@ async function empSavePinSetup(){
   var err = sel('empPinSetupErr');
   if (pin.length<4||pin.length>6||!/^\d+$/.test(pin)){ err.textContent='PIN must be 4-6 digits.'; err.style.display='block'; return; }
   if (pin!==conf){ err.textContent='PINs do not match.'; err.style.display='block'; return; }
-  try{
-    await _sbClient.from('app_crew').update({ pin: pin, permanent_pin: true }).eq('id', authProfile.id);
-  }catch(e){}
+  try{ await _sbClient.from('app_crew').update({pin:pin, permanent_pin:true}).eq('id', authProfile.id); }catch(e){}
   authProfile.pin = pin; authProfile.permanent_pin = true;
   closeMod('empPinSetupModal');
   authEnterCrewPortal();
 }
 
-// ── Employee profile PIN change (from crew portal) ────────────────────────
 function empOpenChangePinModal(){
   setv('empChangePinNew',''); setv('empChangePinConfirm','');
   var err = sel('empChangePinErr'); if(err) err.style.display='none';
@@ -5151,10 +5241,10 @@ async function empSaveChangedPin(){
   if (pin.length<4||pin.length>6||!/^\d+$/.test(pin)){ err.textContent='PIN must be 4-6 digits.'; err.style.display='block'; return; }
   if (pin!==conf){ err.textContent='PINs do not match.'; err.style.display='block'; return; }
   try{
-    await _sbClient.from('app_crew').update({ pin: pin, permanent_pin: true }).eq('id', authProfile.id);
+    await _sbClient.from('app_crew').update({pin:pin, permanent_pin:true}).eq('id', authProfile.id);
     authProfile.pin = pin; authProfile.permanent_pin = true;
     closeMod('empChangePinModal');
-    alert('✅ PIN updated successfully!');
+    alert('\u2705 PIN updated successfully!');
   }catch(e){ err.textContent='Error saving PIN. Try again.'; err.style.display='block'; }
 }
 
