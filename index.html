@@ -3017,7 +3017,10 @@ async function saveCrew(){
         // Check for duplicate email
         var chk=await _sbClient.from('app_crew').select('id').ilike('email',email).maybeSingle();
         if(chk.data){alert('An employee with that email already exists.');return;}
-        await _sbClient.from('app_crew').insert(sbObj);
+        // Don't send id — let Supabase generate UUID
+        delete sbObj.id;
+        var insRes=await _sbClient.from('app_crew').insert(sbObj).select('id').single();
+        if(insRes.data && insRes.data.id) obj.id=insRes.data.id;
       }
     }catch(e){console.warn('Supabase crew sync failed:',e);}
   }
@@ -4916,14 +4919,16 @@ async function empSignUp(){
   _empLoginEmail=email;
   try{
     var ins=await _sbClient.from('app_crew').insert({
-      id:uid(),email:email,first_name:first,last_name:last,
+      email:email,first_name:first,last_name:last,
       phone:phone,role:'Crew member',status:'active',
       pin:pin,permanent_pin:false,
       temp_pin:pin,temp_pin_expires:new Date(Date.now()+15*60*1000).toISOString()
-    });
+    }).select('id').single();
     if(ins.error){if(errEl){errEl.textContent='Error: '+(ins.error.message||'try again');errEl.style.display='block';}return;}
+    // Use the Supabase-generated id for local crew list
+    var newId = (ins.data && ins.data.id) ? ins.data.id : uid();
+    crew.push({id:newId,first:first,last:last,phone:phone,email:email,role:'Crew member',status:'active',pin:pin,permanent_pin:false,hourly_rate:0});
   }catch(e){if(errEl){errEl.textContent='Error creating account. Try again.';errEl.style.display='block';}return;}
-  crew.push({id:uid(),first:first,last:last,phone:phone,email:email,role:'Crew member',status:'active',pin:pin,permanent_pin:false,hourly_rate:0});
   sv('crew',crew);
   var pinDisplay=sel('empSuPinDisplay');if(pinDisplay)pinDisplay.textContent=pin;
   var stepA=sel('empSignupStepA'),stepB=sel('empSignupStepB');
@@ -5304,7 +5309,6 @@ async function ownerAddEmployee(){
     if(chk.data){if(errEl){errEl.textContent='An employee with that email already exists.';errEl.style.display='block';}return;}
   }
   var newEmp={
-    id:uid(),
     email:email,
     first_name:first,
     last_name:last,
@@ -5317,14 +5321,15 @@ async function ownerAddEmployee(){
     temp_pin:null,
     temp_pin_expires:null
   };
+  var generatedId=uid();
   try{
     if(_sbClient){
-      var ins=await _sbClient.from('app_crew').insert(newEmp);
+      var ins=await _sbClient.from('app_crew').insert(newEmp).select('id').single();
       if(ins.error){if(errEl){errEl.textContent='Error saving: '+(ins.error.message||'unknown');errEl.style.display='block';}return;}
+      if(ins.data && ins.data.id) generatedId=ins.data.id;
     }
   }catch(e){if(errEl){errEl.textContent='Error saving employee. Try again.';errEl.style.display='block';}return;}
-  // Also add to local crew list
-  crew.push({id:newEmp.id,first:first,last:last,phone:phone,role:role,status:'active',pin:'',email:email,hourly_rate:rate});
+  crew.push({id:generatedId,first:first,last:last,phone:phone,role:role,status:'active',pin:'',email:email,hourly_rate:rate});
   sv('crew',crew);
   closeMod('modAddEmployee');
   setv('addEmp_first','');setv('addEmp_last','');setv('addEmp_email','');setv('addEmp_phone','');setv('addEmp_rate','');
