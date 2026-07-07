@@ -5,13 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>NJ Premium Services — CRM</title>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://unpkg.com/@supabase/supabase-js@2';document.head.appendChild(s);"></script>
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAnwPd5WNEGCDzS3UrDLKLgOHoIgMQQM2w&libraries=places,marker&loading=async&callback=Function.prototype" async defer></script>
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js';document.head.appendChild(s);"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js';document.head.appendChild(s);"></script>
+<script src="https://unpkg.com/react-router-dom@6/umd/react-router-dom.production.min.js" crossorigin
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/react-router-dom@6/umd/react-router-dom.production.min.js';document.head.appendChild(s);"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';document.head.appendChild(s);"></script>
 
 <style>
 :root{
@@ -79,6 +84,52 @@ tr:hover td{background:var(--bg);}
 </head>
 <body>
 <div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#94A3B8;font-size:13px;">Loading NJ Premium CRM…</div></div>
+
+<!-- WATCHDOG — runs first, before anything else, so it can catch failures
+     even if a later script never runs at all (e.g. a CDN script blocked
+     by an ad-blocker or network issue, which throws no JS error). -->
+<script>
+(function(){
+  window.__NJP_STARTED = false;
+  window.onerror = function(msg, url, line, col, err){
+    showDiag('A script error occurred', msg + ' (line ' + line + ')');
+    return false;
+  };
+  window.addEventListener('unhandledrejection', function(e){
+    // Only escalate to the full diagnostic screen if the app never started at all —
+    // once running, individual save/load failures show their own small alert instead.
+    if (!window.__NJP_STARTED){
+      showDiag('A background task failed while starting', String((e.reason && e.reason.message) || e.reason || 'Unknown error'));
+    } else {
+      console.warn('Unhandled rejection:', e.reason);
+    }
+  });
+  function showDiag(title, detail){
+    var root = document.getElementById('root');
+    if (!root) return;
+    root.innerHTML =
+      '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#0D1B2A;font-family:-apple-system,sans-serif;">' +
+      '<div style="max-width:520px;background:#fff;border-radius:14px;padding:28px;text-align:center;">' +
+      '<div style="font-size:32px;margin-bottom:10px;">&#9888;&#65039;</div>' +
+      '<div style="font-weight:800;font-size:16px;color:#0D1B2A;margin-bottom:10px;">' + title + '</div>' +
+      '<div style="font-size:12px;color:#4A5568;line-height:1.6;margin-bottom:14px;font-family:monospace;background:#F7F9FC;padding:10px;border-radius:8px;text-align:left;word-break:break-word;">' + detail + '</div>' +
+      '<div style="font-size:12px;color:#94A3B8;text-align:left;">Things to try:<br>' +
+      '&#8226; Make sure you are opening the live website link, not a downloaded file<br>' +
+      '&#8226; Disable any ad blocker or content blocker for this site (they sometimes block script files needed to run the app)<br>' +
+      '&#8226; Try a different browser or a private/incognito window<br>' +
+      '&#8226; Check your internet connection is stable' +
+      '</div></div></div>';
+  }
+  setTimeout(function(){
+    if (!window.__NJP_STARTED){
+      showDiag(
+        'The CRM is taking too long to start',
+        'One of the required files (React, Supabase, or the app itself) did not finish loading within 8 seconds. This is usually caused by an ad blocker, a firewall, or a network issue blocking one of the required script files.'
+      );
+    }
+  }, 8000);
+})();
+</script>
 
 <script type="text/babel" data-presets="react">
 // ═══════════════════════════════════════════════════════════════
@@ -187,23 +238,39 @@ function DataProvider(props){
   async function insert(table, row){
     if (!row.id) row.id = uid();
     var res = await sb.from(table).insert(row).select();
-    if (res.error){ console.warn('insert', table, res.error.message); throw res.error; }
-    setState(function(prev){ var n=Object.assign({},prev); n[table]=[res.data[0]].concat(prev[table]||[]); return n; });
-    return res.data[0];
+    if (res.error){
+      console.warn('insert', table, res.error.message);
+      alert('Could not save: ' + res.error.message);
+      throw res.error;
+    }
+    var saved = (res.data && res.data[0]) ? res.data[0] : row; // fall back to what we sent if select-back returns nothing
+    setState(function(prev){ var n=Object.assign({},prev); n[table]=[saved].concat(prev[table]||[]); return n; });
+    return saved;
   }
   async function update(table, id, patch){
     var res = await sb.from(table).update(patch).eq('id', id).select();
-    if (res.error){ console.warn('update', table, res.error.message); throw res.error; }
-    setState(function(prev){
-      var n=Object.assign({},prev);
-      n[table] = (prev[table]||[]).map(function(r){ return r.id===id ? res.data[0] : r; });
-      return n;
-    });
-    return res.data[0];
+    if (res.error){
+      console.warn('update', table, res.error.message);
+      alert('Could not save changes: ' + res.error.message);
+      throw res.error;
+    }
+    var saved = (res.data && res.data[0]) ? res.data[0] : null;
+    if (saved){
+      setState(function(prev){
+        var n=Object.assign({},prev);
+        n[table] = (prev[table]||[]).map(function(r){ return r.id===id ? saved : r; });
+        return n;
+      });
+    }
+    return saved;
   }
   async function remove(table, id){
     var res = await sb.from(table).delete().eq('id', id);
-    if (res.error){ console.warn('delete', table, res.error.message); throw res.error; }
+    if (res.error){
+      console.warn('delete', table, res.error.message);
+      alert('Could not delete: ' + res.error.message);
+      throw res.error;
+    }
     setState(function(prev){
       var n=Object.assign({},prev);
       n[table] = (prev[table]||[]).filter(function(r){ return r.id!==id; });
@@ -251,7 +318,8 @@ async function migrateLegacyData(onProgress){
       id:j.id, customer_id:j.customer||null, service_name:j.service||'', date:j.date||null,
       time:j.time||'09:00', duration:j.duration||2, price:j.price||0, crew_id:j.crew||'',
       status:j.status||'scheduled', notes:j.notes||'',
-      photos_before: j.photosBefore||[], photos_after: j.photosAfter||[], recur: j.recur||'none'
+      photos_before: j.photosBefore||[], photos_after: j.photosAfter||[], recur: j.recur||'none',
+      created_at: j.date ? (j.date+'T'+(j.time||'09:00')+':00') : undefined
     }, {onConflict:'id'});
   }
 
@@ -261,7 +329,8 @@ async function migrateLegacyData(onProgress){
     var r = legacyRev[i];
     await sb.from('v2_revenues').upsert({
       id:r.id, date:r.date||null, descr:r.desc||'', category:r.category||'other',
-      amount:r.amount||0, source:r.source||'', customer_id:r.customer||'', auto_key:r.autoKey||''
+      amount:r.amount||0, source:r.source||'', customer_id:r.customer||'', auto_key:r.autoKey||'',
+      created_at: r.date ? (r.date+'T12:00:00') : undefined
     }, {onConflict:'id'});
   }
 
@@ -271,7 +340,8 @@ async function migrateLegacyData(onProgress){
     var e = legacyExp[i];
     await sb.from('v2_expenses').upsert({
       id:e.id, date:e.date||null, descr:e.desc||'', category:e.category||'other',
-      amount:e.amount||0, recurring:e.recur||'none'
+      amount:e.amount||0, recurring:e.recur||'none',
+      created_at: e.date ? (e.date+'T12:00:00') : undefined
     }, {onConflict:'id'});
   }
 
@@ -282,7 +352,8 @@ async function migrateLegacyData(onProgress){
     await sb.from('v2_quotes').upsert({
       id:q.id, num:q.num||null, customer_id:q.customer||null, items:q.items||[],
       subtotal:q.subtotal||0, tax:q.tax||0, total:q.total||0, status:q.status||'draft',
-      date:q.date||null, notes:q.notes||''
+      date:q.date||null, notes:q.notes||'',
+      created_at: q.date ? (q.date+'T12:00:00') : undefined
     }, {onConflict:'id'});
   }
 
@@ -292,7 +363,8 @@ async function migrateLegacyData(onProgress){
     var inv = legacyInv[i];
     await sb.from('v2_invoices').upsert({
       id:inv.id, num:inv.num||null, customer_id:inv.customer||null, service:inv.service||'',
-      amount:inv.amount||0, due:inv.due||null, status:inv.status||'sent', notes:inv.notes||''
+      amount:inv.amount||0, due:inv.due||null, status:inv.status||'sent', notes:inv.notes||'',
+      created_at: inv.due ? (inv.due+'T12:00:00') : undefined
     }, {onConflict:'id'});
   }
 
@@ -302,7 +374,8 @@ async function migrateLegacyData(onProgress){
     var p = legacyPins[i];
     await sb.from('v2_map_pins').upsert({
       id:p.id, lat:p.lat, lng:p.lng, addr:p.addr||'', status:p.status||'not-visited',
-      notes:p.notes||'', customer_id:p.custId||'', date:p.date||null
+      notes:p.notes||'', customer_id:p.custId||'', date:p.date||null,
+      created_at: p.date ? (p.date+'T12:00:00') : undefined
     }, {onConflict:'id'});
   }
 
@@ -323,22 +396,28 @@ function AuthProvider(props){
   var _p = React.useState(null), profile = _p[0], setProfile = _p[1]; // {..., __role: 'owner'|'crew', role: 'Sales Rep'|'Technician'|...}
   var _s = React.useState(null), session = _s[0], setSession = _s[1];
   var _l = React.useState(true), loading = _l[0], setLoading = _l[1];
+  // Refs mirror the state above but update synchronously — used inside functions
+  // (createProfile, savePin) that may be called back-to-back before a re-render
+  // happens, where reading the React state directly would see a stale closure.
+  var sessionRef = React.useRef(null);
+  var profileRef = React.useRef(null);
 
   async function resolveSession(sess){
+    sessionRef.current = sess;
     setSession(sess);
     var userId = sess.user.id, email = sess.user.email;
     try{
       var ownerRes = await sb.from('app_owners').select('*').eq('user_id', userId).maybeSingle();
       if (ownerRes.data){
         var op = Object.assign({}, ownerRes.data, {__role:'owner'});
-        setProfile(op); setLoading(false); return op;
+        profileRef.current = op; setProfile(op); setLoading(false); return op;
       }
     }catch(e){}
     try{
       var crewRes = await sb.from('app_crew').select('*').eq('user_id', userId).maybeSingle();
       if (crewRes.data){
         var cp = Object.assign({}, crewRes.data, {__role:'crew'});
-        setProfile(cp); setLoading(false); return cp;
+        profileRef.current = cp; setProfile(cp); setLoading(false); return cp;
       }
     }catch(e){}
     setLoading(false);
@@ -360,30 +439,40 @@ function AuthProvider(props){
   }, []);
 
   async function createProfile(kind, extra){
-    var sess = session; if (!sess) return null;
+    var sess = sessionRef.current; if (!sess) return null;
     var userId = sess.user.id, email = sess.user.email;
     if (kind === 'owner'){
       var row = {user_id:userId, email:email, first_name:(extra&&extra.first)||email.split('@')[0], pin:''};
-      await sb.from('app_owners').insert(row);
+      var r1 = await sb.from('app_owners').insert(row);
+      if (r1.error){ console.warn('createProfile owner insert failed:', r1.error.message); return null; }
       var p = Object.assign({}, row, {__role:'owner'});
-      setProfile(p); return p;
+      profileRef.current = p; setProfile(p); return p;
     } else {
       var crow = {
         user_id:userId, email:email, first_name:(extra&&extra.first)||email.split('@')[0],
         last_name:(extra&&extra.last)||'', phone:'', role:(extra&&extra.jobRole)||'Technician',
         status:'active', pin:'', hourly_rate:0
       };
-      await sb.from('app_crew').insert(crow);
+      var r2 = await sb.from('app_crew').insert(crow);
+      if (r2.error){ console.warn('createProfile crew insert failed:', r2.error.message); return null; }
       var cp = Object.assign({}, crow, {__role:'crew'});
-      setProfile(cp); return cp;
+      profileRef.current = cp; setProfile(cp); return cp;
     }
   }
 
   async function savePin(pin){
-    if (!profile) return;
-    var table = profile.__role==='owner' ? 'app_owners' : 'app_crew';
-    await sb.from(table).update({pin:pin}).eq('user_id', profile.user_id);
-    setProfile(Object.assign({}, profile, {pin:pin}));
+    var p0 = profileRef.current; if (!p0) return {ok:false, error:'No profile loaded.'};
+    var table = p0.__role==='owner' ? 'app_owners' : 'app_crew';
+    // Check this PIN isn't already used by someone else in the same table
+    // (PIN login looks up by pin alone, so two people sharing one PIN would
+    // break login for both — catch it here with a clear message instead).
+    var existing = await sb.from(table).select('user_id').eq('pin', pin).neq('user_id', p0.user_id).maybeSingle();
+    if (existing.data){ return {ok:false, error:'That PIN is already in use by someone else. Please choose a different one.'}; }
+    var res = await sb.from(table).update({pin:pin}).eq('user_id', p0.user_id);
+    if (res.error){ return {ok:false, error:res.error.message}; }
+    var updated = Object.assign({}, p0, {pin:pin});
+    profileRef.current = updated; setProfile(updated);
+    return {ok:true};
   }
 
   async function pinLogin(role, pin){
@@ -391,9 +480,11 @@ function AuthProvider(props){
     var res = await sb.from(table).select('*').eq('pin', pin).maybeSingle();
     if (res.data){
       var p = Object.assign({}, res.data, {__role: role});
+      var fakeSess = {user:{id:res.data.user_id, email:res.data.email}, __pinSession:true};
+      profileRef.current = p; sessionRef.current = fakeSess;
       setProfile(p);
       // Fabricate a lightweight session marker so ProtectedRoute treats user as logged in
-      setSession({user:{id:res.data.user_id, email:res.data.email}, __pinSession:true});
+      setSession(fakeSess);
       return p;
     }
     return null;
@@ -401,6 +492,7 @@ function AuthProvider(props){
 
   async function signOut(){
     try{ await sb.auth.signOut(); }catch(e){}
+    sessionRef.current = null; profileRef.current = null;
     setSession(null); setProfile(null);
   }
 
@@ -1097,19 +1189,35 @@ function QuoteFormModal(props){
   var tax = Math.round(subtotal*0.13*100)/100;
   var total = subtotal+tax;
 
-  function startDraw(e){ drawing.current=true; draw(e); }
+  function getPos(e, c){
+    var rect = c.getBoundingClientRect();
+    return {
+      x: (e.touches?e.touches[0].clientX:e.clientX) - rect.left,
+      y: (e.touches?e.touches[0].clientY:e.clientY) - rect.top
+    };
+  }
+  function startDraw(e){
+    drawing.current=true;
+    var c = canvasRef.current; if(!c) return;
+    var p = getPos(e, c);
+    // Reset the path to the touch-down point FIRST so the initial stroke never
+    // draws a stray line from the canvas's default (0,0) origin.
+    var ctx = c.getContext('2d');
+    ctx.beginPath(); ctx.moveTo(p.x, p.y);
+  }
   function endDraw(){ drawing.current=false; var c=canvasRef.current; if(c) setSig(c.toDataURL()); }
   function draw(e){
     if(!drawing.current) return;
     var c = canvasRef.current; if(!c) return;
-    var rect = c.getBoundingClientRect();
+    var p = getPos(e, c);
     var ctx = c.getContext('2d');
-    var x = (e.touches?e.touches[0].clientX:e.clientX) - rect.left;
-    var y = (e.touches?e.touches[0].clientY:e.clientY) - rect.top;
     ctx.lineWidth=2; ctx.lineCap='round'; ctx.strokeStyle='#0D1B2A';
-    ctx.lineTo(x,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y);
+    ctx.lineTo(p.x,p.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x,p.y);
   }
-  function clearSig(){ var c=canvasRef.current; if(c){ c.getContext('2d').clearRect(0,0,c.width,c.height); setSig(''); } }
+  function clearSig(){
+    var c=canvasRef.current;
+    if(c){ var ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); ctx.beginPath(); setSig(''); }
+  }
 
   async function save(){
     if (!custId){ alert('Select a customer'); return; }
@@ -1440,13 +1548,21 @@ function InvoicesPage(){
   var filtered = d.invoices.filter(function(i){return filter==='all'||i.status===filter;});
   var outstanding = d.invoices.filter(function(i){return i.status!=='paid';}).reduce(function(s,i){return s+Number(i.amount||0);},0);
 
+  var markingPaid = React.useRef({});
   async function markPaid(inv, method){
-    await d.update('v2_invoices', inv.id, {status:'paid', paid_at:new Date().toISOString(), method:method});
-    var c = d.getCustomer(inv.customer_id);
-    await d.insert('v2_revenues', {
-      date: today(), descr:'Invoice #'+inv.num+' — '+c.first_name+' '+c.last_name, category:'invoice',
-      amount:inv.amount, source:'invoice', customer_id:inv.customer_id, auto_key:'auto_inv_'+inv.id
-    });
+    // Guard against double-firing (rapid double-click) creating duplicate revenue rows
+    if (inv.status==='paid' || markingPaid.current[inv.id]) return;
+    markingPaid.current[inv.id] = true;
+    try{
+      await d.update('v2_invoices', inv.id, {status:'paid', paid_at:new Date().toISOString(), method:method});
+      var c = d.getCustomer(inv.customer_id);
+      await d.insert('v2_revenues', {
+        date: today(), descr:'Invoice #'+inv.num+' — '+c.first_name+' '+c.last_name, category:'invoice',
+        amount:inv.amount, source:'invoice', customer_id:inv.customer_id, auto_key:'auto_inv_'+inv.id
+      });
+    } finally {
+      delete markingPaid.current[inv.id];
+    }
   }
 
   return <div>
@@ -2055,15 +2171,23 @@ function LoginPage(){
     await auth.resolveSession(res.data.session);
   }
 
+  var _busy = React.useState(false), busy = _busy[0], setBusy = _busy[1];
+
   async function doSignUp(){
     setErr('');
     if (!f.first){ setErr('Enter your first name.'); return; }
     if (!f.email || !f.pass || f.pass.length<6){ setErr('Enter an email and a password (6+ characters).'); return; }
-    var res = await sb.auth.signUp({email:f.email, password:f.pass});
-    if (res.error){ setErr(res.error.message); return; }
-    if (!res.data.session){ setErr('Check your email to confirm your account, then sign in.'); return; }
-    await auth.resolveSession(res.data.session);
-    await auth.createProfile(roleTab, {first:f.first, last:f.last, jobRole:f.jobRole});
+    setBusy(true);
+    try{
+      var res = await sb.auth.signUp({email:f.email, password:f.pass});
+      if (res.error){ setErr(res.error.message); return; }
+      if (!res.data.session){ setErr('Check your email to confirm your account, then sign in.'); return; }
+      await auth.resolveSession(res.data.session);
+      var created = await auth.createProfile(roleTab, {first:f.first, last:f.last, jobRole:f.jobRole});
+      if (!created){ setErr('Your login was created, but setting up your profile failed. Please try signing in again, or contact support if this keeps happening.'); return; }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function doGoogle(){
@@ -2082,7 +2206,8 @@ function LoginPage(){
   async function savePinSetup(){
     if (f.pin.length<4 || f.pin.length>6 || !/^\d+$/.test(f.pin)){ setErr('PIN must be 4–6 digits.'); return; }
     if (f.pin !== f.pinConfirm){ setErr('PINs do not match.'); return; }
-    await auth.savePin(f.pin);
+    var result = await auth.savePin(f.pin);
+    if (!result || !result.ok){ setErr((result && result.error) || 'Could not save PIN. Please try again.'); return; }
     navigate('/', {replace:true});
   }
 
@@ -2142,7 +2267,7 @@ function LoginPage(){
           </Field>}
           <Field label="Email"><input type="email" value={f.email} onChange={function(e){upd('email',e.target.value);}}/></Field>
           <Field label="Password"><input type="password" placeholder="At least 6 characters" value={f.pass} onChange={function(e){upd('pass',e.target.value);}}/></Field>
-          <button className="btn btn-primary" style={{width:'100%',padding:12}} onClick={doSignUp}>Create account</button>
+          <button className="btn btn-primary" style={{width:'100%',padding:12}} onClick={doSignUp} disabled={busy}>{busy?'Creating account…':'Create account'}</button>
         </React.Fragment>}
 
         {roleTab==='owner' && <React.Fragment>
@@ -2251,7 +2376,11 @@ function App(){
 function DataGate(){
   var auth = useAuth();
   if (auth.loading) return <Loading full/>;
-  if (!auth.session || !auth.profile){
+  // Stay on the login/PIN-setup screen until BOTH a profile exists AND that
+  // profile has a PIN saved — otherwise a brand-new signup would skip PIN
+  // setup entirely and land on the dashboard with no PIN ever configured.
+  var needsAuthFlow = !auth.session || !auth.profile || !auth.profile.pin;
+  if (needsAuthFlow){
     return <HashRouter><Routes><Route path="*" element={<LoginPage/>}/></Routes></HashRouter>;
   }
   return <DataProvider>
@@ -2274,6 +2403,7 @@ window.addEventListener('error', function(e){
 });
 
 try{
+  window.__NJP_STARTED = true;
   var root = ReactDOM.createRoot(document.getElementById('root'));
   root.render(<App/>);
 }catch(e){
