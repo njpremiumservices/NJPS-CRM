@@ -834,18 +834,24 @@ function OwnerDashboard(){
   </div>;
 }
 
-// ── Weather widget — free Open-Meteo API, no key required ──────────
+// ── Weather widget — free Open-Meteo API, no key required — 7-day forecast ──
+function weatherIcon(code){
+  return code===0?'☀️':code<=3?'🌤️':code<=48?'🌫️':code<=67?'🌧️':code<=77?'❄️':code<=99?'⛈️':'🌤️';
+}
+
 function WeatherWidget(){
   var d = useData();
   var _wx = React.useState(null), wx = _wx[0], setWx = _wx[1];
   var _err = React.useState(false), err = _err[0], setErr = _err[1];
+  var _expanded = React.useState(false), expanded = _expanded[0], setExpanded = _expanded[1];
 
   React.useEffect(function(){
     var url = 'https://api.open-meteo.com/v1/forecast?latitude=43.4675&longitude=-79.6877'
       + '&current=temperature_2m,precipitation,weather_code,wind_speed_10m'
-      + '&daily=precipitation_probability_max&timezone=America%2FToronto&forecast_days=1';
+      + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max'
+      + '&timezone=America%2FToronto&forecast_days=7';
     fetch(url).then(function(r){ return r.json(); }).then(function(data){
-      if (data && data.current) setWx(data);
+      if (data && data.current && data.daily) setWx(data);
       else setErr(true);
     }).catch(function(){ setErr(true); });
   }, []);
@@ -855,21 +861,45 @@ function WeatherWidget(){
 
   var temp = Math.round(wx.current.temperature_2m);
   var wind = Math.round(wx.current.wind_speed_10m);
-  var rainChance = wx.daily && wx.daily.precipitation_probability_max ? wx.daily.precipitation_probability_max[0] : 0;
+  var rainChance = wx.daily.precipitation_probability_max ? wx.daily.precipitation_probability_max[0] : 0;
   var code = wx.current.weather_code;
-  var icon = code===0?'☀️':code<=3?'🌤️':code<=48?'🌫️':code<=67?'🌧️':code<=77?'❄️':code<=99?'⛈️':'🌤️';
+  var icon = weatherIcon(code);
   var t = today();
   var outdoorJobsToday = d.jobs.filter(function(j){return j.date===t && j.status!=='cancelled' && j.status!=='completed';}).length;
   var risky = (rainChance>=50 || wind>=35) && outdoorJobsToday>0;
 
-  return <div className="card" style={{marginBottom:14,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap',
+  return <div className="card" style={{marginBottom:14,
     background: risky ? 'var(--redl)' : 'var(--surface)', borderColor: risky ? 'var(--red)' : 'var(--border)'}}>
-    <div style={{fontSize:32}}>{icon}</div>
-    <div>
-      <div style={{fontSize:18,fontWeight:800,color:'var(--navy)'}}>{temp}°C <span style={{fontSize:12,fontWeight:500,color:'var(--t2)'}}>· Oakville, ON</span></div>
-      <div style={{fontSize:11,color:'var(--t2)'}}>Wind {wind} km/h · {rainChance}% chance of precipitation today</div>
+    <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap',cursor:'pointer'}} onClick={function(){setExpanded(!expanded);}}>
+      <div style={{fontSize:32}}>{icon}</div>
+      <div>
+        <div style={{fontSize:18,fontWeight:800,color:'var(--navy)'}}>{temp}°C <span style={{fontSize:12,fontWeight:500,color:'var(--t2)'}}>· Oakville, ON</span></div>
+        <div style={{fontSize:11,color:'var(--t2)'}}>Wind {wind} km/h · {rainChance}% chance of precipitation today</div>
+      </div>
+      {risky ? <div style={{fontSize:12,fontWeight:700,color:'var(--red)'}}>⚠️ Weather may impact {outdoorJobsToday} job{outdoorJobsToday===1?'':'s'} today</div> : null}
+      <div style={{marginLeft:'auto',fontSize:11,color:'var(--blue)',fontWeight:700}}>{expanded?'Hide 7-day forecast ▲':'Show 7-day forecast ▼'}</div>
     </div>
-    {risky ? <div style={{marginLeft:'auto',fontSize:12,fontWeight:700,color:'var(--red)'}}>⚠️ Weather may impact {outdoorJobsToday} job{outdoorJobsToday===1?'':'s'} scheduled today</div> : null}
+
+    {expanded && <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:8,marginTop:16,paddingTop:14,borderTop:'1px solid var(--border)'}}>
+      {wx.daily.time.map(function(dateStr, i){
+        var dt = new Date(dateStr+'T00:00:00');
+        var hi = Math.round(wx.daily.temperature_2m_max[i]);
+        var lo = Math.round(wx.daily.temperature_2m_min[i]);
+        var rain = wx.daily.precipitation_probability_max[i];
+        var dayWind = Math.round(wx.daily.wind_speed_10m_max[i]);
+        var dayCode = wx.daily.weather_code[i];
+        var jobsThatDay = d.jobs.filter(function(j){return j.date===dateStr && j.status!=='cancelled' && j.status!=='completed';}).length;
+        var dayRisky = (rain>=50 || dayWind>=35) && jobsThatDay>0;
+        return <div key={dateStr} style={{textAlign:'center',padding:8,borderRadius:8,background: dayRisky?'var(--redl)':'var(--bg)'}}>
+          <div style={{fontSize:11,fontWeight:700,color:'var(--navy)'}}>{i===0?'Today':dt.toLocaleDateString('en-CA',{weekday:'short'})}</div>
+          <div style={{fontSize:22,margin:'4px 0'}}>{weatherIcon(dayCode)}</div>
+          <div style={{fontSize:12,fontWeight:700}}>{hi}° <span style={{color:'var(--t3)',fontWeight:400}}>{lo}°</span></div>
+          <div style={{fontSize:10,color:'var(--blue)',marginTop:2}}>💧 {rain}%</div>
+          <div style={{fontSize:10,color:'var(--t3)'}}>💨 {dayWind} km/h</div>
+          {jobsThatDay>0 ? <div style={{fontSize:9,color:dayRisky?'var(--red)':'var(--t2)',marginTop:3,fontWeight:700}}>{jobsThatDay} job{jobsThatDay===1?'':'s'}</div> : null}
+        </div>;
+      })}
+    </div>}
   </div>;
 }
 
@@ -2299,7 +2329,11 @@ function connectQuickBooks(){
 
 async function qbSync(action, localId){
   var res = await fetch(QB_SYNC_URL, {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':'Bearer ' + SUPABASE_KEY  // required by Supabase Edge Functions
+    },
     body: JSON.stringify({action:action, localId:localId})
   });
   var data = await res.json();
