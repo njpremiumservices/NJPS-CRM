@@ -610,8 +610,14 @@ function Loading(props){
 }
 
 function StatCard(props){
-  return <div className="metric" style={props.color?{borderLeftColor:props.color}:null}>
-    <div className="metric-lbl">{props.label}</div>
+  var clickable = !!props.onClick;
+  var style = props.color ? {borderLeftColor:props.color} : {};
+  if (clickable){ style.cursor='pointer'; style.transition='transform .1s, box-shadow .1s'; }
+  return <div className="metric" style={style}
+    onClick={props.onClick}
+    onMouseEnter={clickable ? function(e){e.currentTarget.style.boxShadow='0 4px 14px rgba(13,27,42,.12)';e.currentTarget.style.transform='translateY(-1px)';} : undefined}
+    onMouseLeave={clickable ? function(e){e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none';} : undefined}>
+    <div className="metric-lbl">{props.label}{clickable ? <span style={{float:'right',color:'var(--t3)',fontSize:10}}>→</span> : null}</div>
     <div className="metric-val" style={props.valColor?{color:props.valColor}:null}>{props.value}</div>
     {props.sub ? <div className="metric-sub">{props.sub}</div> : null}
   </div>;
@@ -816,6 +822,7 @@ function pageHead(title, sub){
 
 function OwnerDashboard(){
   var d = useData();
+  var navigate = useNavigate();
   var t = today();
   var todaysRev = d.revenues.filter(function(r){return r.date===t;}).reduce(function(s,r){return s+Number(r.amount||0);},0);
   var jobsCompletedToday = d.jobs.filter(function(j){return j.date===t && j.status==='completed';}).length;
@@ -848,25 +855,25 @@ function OwnerDashboard(){
     {pageHead('Dashboard', new Date().toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric',year:'numeric'}))}
     <WeatherWidget/>
     <div className="g4" style={{marginBottom:14}}>
-      <StatCard label="Today's Revenue" value={fmt$(todaysRev)} color="var(--green)" valColor="var(--green)"/>
-      <StatCard label="Jobs Completed Today" value={jobsCompletedToday} color="var(--gold)"/>
-      <StatCard label="Quotes Awaiting Approval" value={quotesAwaiting} color="var(--blue)"/>
-      <StatCard label="Sales Pipeline" value={fmt$(pipelineValue)} color="var(--gold)"/>
+      <StatCard label="Today's Revenue" value={fmt$(todaysRev)} color="var(--green)" valColor="var(--green)" onClick={function(){navigate('/reports');}}/>
+      <StatCard label="Jobs Completed Today" value={jobsCompletedToday} color="var(--gold)" onClick={function(){navigate('/schedule');}}/>
+      <StatCard label="Quotes Awaiting Approval" value={quotesAwaiting} color="var(--blue)" onClick={function(){navigate('/quotes');}}/>
+      <StatCard label="Sales Pipeline" value={fmt$(pipelineValue)} color="var(--gold)" onClick={function(){navigate('/leads');}}/>
     </div>
     <div className="g4" style={{marginBottom:14}}>
-      <StatCard label="Outstanding Invoices" value={fmt$(outstandingInv)} color="var(--red)" valColor={outstandingInv>0?'var(--red)':null}/>
-      <StatCard label="Equipment Needing Attention" value={equipNeedsAttn} color={equipNeedsAttn>0?'var(--red)':'var(--green)'}/>
-      <StatCard label="This Month Revenue" value={fmt$(monthRev)} color="var(--green)"/>
-      <StatCard label="This Month Net Profit" value={fmt$(monthProfit)} color={monthProfit>=0?'var(--green)':'var(--red)'} valColor={monthProfit>=0?'var(--green)':'var(--red)'}/>
+      <StatCard label="Outstanding Invoices" value={fmt$(outstandingInv)} color="var(--red)" valColor={outstandingInv>0?'var(--red)':null} onClick={function(){navigate('/invoices');}}/>
+      <StatCard label="Equipment Needing Attention" value={equipNeedsAttn} color={equipNeedsAttn>0?'var(--red)':'var(--green)'} onClick={function(){navigate('/equipment');}}/>
+      <StatCard label="This Month Revenue" value={fmt$(monthRev)} color="var(--green)" onClick={function(){navigate('/reports');}}/>
+      <StatCard label="This Month Net Profit" value={fmt$(monthProfit)} color={monthProfit>=0?'var(--green)':'var(--red)'} valColor={monthProfit>=0?'var(--green)':'var(--red)'} onClick={function(){navigate('/reports');}}/>
     </div>
 
     <div className="card" style={{marginBottom:14}}>
       <div style={{fontWeight:700,marginBottom:12,color:'var(--navy)'}}>Monthly KPIs</div>
       <div className="g4">
-        <StatCard label="Revenue growth vs last month" value={(revGrowth>=0?'+':'')+revGrowth+'%'} valColor={revGrowth>=0?'var(--green)':'var(--red)'}/>
-        <StatCard label="Avg ticket size" value={fmt$(avgTicket)}/>
-        <StatCard label="New customers this month" value={newCustomersThisMonth}/>
-        <StatCard label="Customer satisfaction" value={avgRating?avgRating.toFixed(1)+' / 5 ⭐':'No ratings yet'} valColor={avgRating&&avgRating<4?'var(--red)':'var(--green)'}/>
+        <StatCard label="Revenue growth vs last month" value={(revGrowth>=0?'+':'')+revGrowth+'%'} valColor={revGrowth>=0?'var(--green)':'var(--red)'} onClick={function(){navigate('/reports');}}/>
+        <StatCard label="Avg ticket size" value={fmt$(avgTicket)} onClick={function(){navigate('/jobs');}}/>
+        <StatCard label="New customers this month" value={newCustomersThisMonth} onClick={function(){navigate('/customers');}}/>
+        <StatCard label="Customer satisfaction" value={avgRating?avgRating.toFixed(1)+' / 5 ⭐':'No ratings yet'} valColor={avgRating&&avgRating<4?'var(--red)':'var(--green)'} onClick={function(){navigate('/jobs');}}/>
       </div>
     </div>
 
@@ -981,6 +988,7 @@ function TeamProductivityMini(){
 function SalesDashboard(){
   var d = useData();
   var auth = useAuth();
+  var navigate = useNavigate();
   var myId = auth.profile.user_id;
   var t = today();
   var myLeads = d.leads.filter(function(l){return l.assigned_to===myId;});
@@ -998,14 +1006,14 @@ function SalesDashboard(){
   return <div>
     {pageHead('My Sales Dashboard')}
     <div className="g4" style={{marginBottom:14}}>
-      <StatCard label="New Leads" value={newLeads} color="var(--blue)"/>
-      <StatCard label="Follow-ups Due" value={followupsDue} color={followupsDue>0?'var(--red)':'var(--green)'}/>
-      <StatCard label="Estimates Scheduled" value={estScheduled} color="var(--gold)"/>
-      <StatCard label="Quote Acceptance Rate" value={acceptRate+'%'} color="var(--green)"/>
+      <StatCard label="New Leads" value={newLeads} color="var(--blue)" onClick={function(){navigate('/leads');}}/>
+      <StatCard label="Follow-ups Due" value={followupsDue} color={followupsDue>0?'var(--red)':'var(--green)'} onClick={function(){navigate('/leads');}}/>
+      <StatCard label="Estimates Scheduled" value={estScheduled} color="var(--gold)" onClick={function(){navigate('/leads');}}/>
+      <StatCard label="Quote Acceptance Rate" value={acceptRate+'%'} color="var(--green)" onClick={function(){navigate('/quotes');}}/>
     </div>
     <div className="g2" style={{marginBottom:14}}>
-      <StatCard label="Commission Earned (est.)" value={fmt$(commission)} color="var(--green)" valColor="var(--green)" sub={'10% of '+fmt$(wonValue)+' won'}/>
-      <StatCard label="Leads Won / Lost" value={won+' / '+lost}/>
+      <StatCard label="Commission Earned (est.)" value={fmt$(commission)} color="var(--green)" valColor="var(--green)" sub={'10% of '+fmt$(wonValue)+' won'} onClick={function(){navigate('/leads');}}/>
+      <StatCard label="Leads Won / Lost" value={won+' / '+lost} onClick={function(){navigate('/leads');}}/>
     </div>
     <div className="card">
       <div style={{fontWeight:700,marginBottom:12,color:'var(--navy)'}}>Sales Leaderboard (all reps, by won value)</div>
@@ -1077,6 +1085,10 @@ function CustomersPage(){
   var filtered = d.customers.filter(function(c){
     var s = (c.first_name+' '+c.last_name+' '+(c.phone||'')+' '+(c.email||'')+' '+(c.address||'')).toLowerCase();
     return s.indexOf(q.toLowerCase()) !== -1;
+  }).sort(function(a,b){
+    var an = (a.first_name||'').toLowerCase()+' '+(a.last_name||'').toLowerCase();
+    var bn = (b.first_name||'').toLowerCase()+' '+(b.last_name||'').toLowerCase();
+    return an.localeCompare(bn);
   });
 
   return <div>
@@ -1998,9 +2010,9 @@ function InvoicesPage(){
       <button className="btn btn-primary" onClick={function(){setShowNew(true);}}>+ New invoice</button>
     </div>
     <div className="g3" style={{marginBottom:14}}>
-      <StatCard label="Outstanding" value={fmt$(outstanding)} color="var(--red)" valColor={outstanding>0?'var(--red)':null}/>
-      <StatCard label="Total Invoices" value={d.invoices.length}/>
-      <StatCard label="Paid" value={d.invoices.filter(function(i){return i.status==='paid';}).length} color="var(--green)"/>
+      <StatCard label="Outstanding" value={fmt$(outstanding)} color="var(--red)" valColor={outstanding>0?'var(--red)':null} onClick={function(){setFilter('sent');}}/>
+      <StatCard label="Total Invoices" value={d.invoices.length} onClick={function(){setFilter('all');}}/>
+      <StatCard label="Paid" value={d.invoices.filter(function(i){return i.status==='paid';}).length} color="var(--green)" onClick={function(){setFilter('paid');}}/>
     </div>
     <div className="tabs" style={{marginBottom:14}}>
       {['all','sent','paid','overdue'].map(function(s){
@@ -2478,6 +2490,7 @@ function QuickBooksPanel(){
 
 function ReportsPage(){
   var d = useData();
+  var navigate = useNavigate();
   var _crew = React.useState([]), crew = _crew[0], setCrew = _crew[1];
   React.useEffect(function(){ sb.from('app_crew').select('*').then(function(r){setCrew(r.data||[]);}); }, []);
 
@@ -2566,9 +2579,9 @@ function ReportsPage(){
     </div>
 
     <div className="g4" style={{marginTop:14}}>
-      <StatCard label="Equipment Costs" value={fmt$(equipCosts)}/>
-      <StatCard label="Completed Jobs" value={completedJobs.length}/>
-      <StatCard label="Active Customers" value={d.customers.length}/>
+      <StatCard label="Equipment Costs" value={fmt$(equipCosts)} onClick={function(){navigate('/equipment');}}/>
+      <StatCard label="Completed Jobs" value={completedJobs.length} onClick={function(){navigate('/jobs');}}/>
+      <StatCard label="Active Customers" value={d.customers.length} onClick={function(){navigate('/customers');}}/>
       <StatCard label="Customer Retention" value={retentionRate+'%'} valColor={retentionRate>=30?'var(--green)':null} sub={repeatCustomers+' of '+customersWithJobs+' repeat customers'}/>
     </div>
     <div className="g2" style={{marginTop:14}}>
