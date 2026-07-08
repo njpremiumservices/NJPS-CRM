@@ -13,8 +13,6 @@
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js';document.head.appendChild(s);"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js';document.head.appendChild(s);"></script>
-<script src="https://unpkg.com/react-router-dom@6.26.2/dist/umd/react-router-dom.production.min.js" crossorigin
-  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/react-router-dom@6.26.2/dist/umd/react-router-dom.production.min.js';document.head.appendChild(s);"></script>
 <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" crossorigin
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js';document.head.appendChild(s);"></script>
 
@@ -511,7 +509,87 @@ function AuthProvider(props){
 // ═══════════════════════════════════════════════════════════════
 // UI — shared components
 // ═══════════════════════════════════════════════════════════════
-var { HashRouter, Routes, Route, Link, useNavigate, useParams, useLocation, Navigate } = ReactRouterDOM;
+
+// ── Minimal built-in hash router ──────────────────────────────────
+// Replaces react-router-dom. This app only ever uses fixed, static page
+// paths (no dynamic :params anywhere), so a small router we fully control
+// covers everything needed while removing an external CDN dependency that
+// proved unreliable across different builds/versions in the wild.
+var RouterContext = React.createContext(null);
+
+function parseHash(){
+  var h = window.location.hash || '#/';
+  h = h.replace(/^#/, '');
+  if (h.charAt(0) !== '/') h = '/' + h;
+  var qIdx = h.indexOf('?');
+  var pathname = qIdx === -1 ? h : h.slice(0, qIdx);
+  var search = qIdx === -1 ? '' : h.slice(qIdx);
+  if (pathname.length > 1 && pathname.charAt(pathname.length-1) === '/') pathname = pathname.slice(0, -1);
+  return { pathname: pathname || '/', search: search };
+}
+
+function HashRouter(props){
+  var _loc = React.useState(parseHash), loc = _loc[0], setLoc = _loc[1];
+  React.useEffect(function(){
+    function onChange(){ setLoc(parseHash()); }
+    window.addEventListener('hashchange', onChange);
+    return function(){ window.removeEventListener('hashchange', onChange); };
+  }, []);
+  function navigate(to, opts){
+    var clean = to.charAt(0) === '/' ? to : '/' + to;
+    if (opts && opts.replace){
+      var url = window.location.pathname + window.location.search + '#' + clean;
+      window.history.replaceState(null, '', url);
+      setLoc(parseHash());
+    } else {
+      window.location.hash = clean;
+    }
+  }
+  var value = { pathname: loc.pathname, search: loc.search, navigate: navigate };
+  return React.createElement(RouterContext.Provider, {value:value}, props.children);
+}
+
+function useNavigate(){
+  var ctx = React.useContext(RouterContext);
+  return function(to, opts){ ctx.navigate(to, opts); };
+}
+function useLocation(){
+  var ctx = React.useContext(RouterContext);
+  return { pathname: ctx.pathname, search: ctx.search };
+}
+function useParams(){ return {}; } // not used anywhere in this app (no dynamic routes)
+
+function Link(props){
+  var ctx = React.useContext(RouterContext);
+  function onClick(e){
+    e.preventDefault();
+    ctx.navigate(props.to);
+  }
+  var rest = Object.assign({}, props);
+  delete rest.to; delete rest.children;
+  return React.createElement('a', Object.assign({href:'#'+props.to, onClick:onClick}, rest), props.children);
+}
+
+function Navigate(props){
+  var ctx = React.useContext(RouterContext);
+  React.useEffect(function(){ ctx.navigate(props.to, {replace: props.replace}); }, []);
+  return null;
+}
+
+// Exact static-path matching only (sufficient — this app has no dynamic route segments)
+function Route(){ return null; } // never rendered directly; Routes reads its props below
+function Routes(props){
+  var ctx = React.useContext(RouterContext);
+  var children = React.Children.toArray(props.children);
+  var exact = null, wildcard = null;
+  for (var i=0;i<children.length;i++){
+    var p = children[i].props.path;
+    if (p === ctx.pathname){ exact = children[i]; break; }
+    if (p === '*') wildcard = children[i];
+  }
+  var match = exact || wildcard;
+  return match ? match.props.element : null;
+}
 
 function Loading(props){
   return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height: props.full?'100vh':'200px',color:'var(--t3)',fontSize:13,gap:8}}>
