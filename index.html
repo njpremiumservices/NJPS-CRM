@@ -2282,6 +2282,85 @@ function TeamOwnerView(){
 // ═══════════════════════════════════════════════════════════════
 // REPORTS
 // ═══════════════════════════════════════════════════════════════
+var QB_CLIENT_ID = 'ABK6pSQ7YE4gANV3zzWN4Ta48ym5BRcgFHb4UDjoCVS9KroZT6';
+var QB_REDIRECT_URI = 'https://kmohglnqjoyuaqijbeuq.supabase.co/functions/v1/quickbooks-callback';
+var QB_SYNC_URL = 'https://kmohglnqjoyuaqijbeuq.supabase.co/functions/v1/quickbooks-sync';
+
+function connectQuickBooks(){
+  var state = Math.random().toString(36).slice(2);
+  var url = 'https://appcenter.intuit.com/connect/oauth2'
+    + '?client_id=' + encodeURIComponent(QB_CLIENT_ID)
+    + '&redirect_uri=' + encodeURIComponent(QB_REDIRECT_URI)
+    + '&response_type=code'
+    + '&scope=' + encodeURIComponent('com.intuit.quickbooks.accounting')
+    + '&state=' + state;
+  window.location.href = url;
+}
+
+async function qbSync(action, localId){
+  var res = await fetch(QB_SYNC_URL, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action:action, localId:localId})
+  });
+  var data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Sync failed');
+  return data;
+}
+
+function QuickBooksPanel(){
+  var loc = useLocation();
+  var _status = React.useState(null), status = _status[0], setStatus = _status[1];
+  var _msg = React.useState(''), msg = _msg[0], setMsg = _msg[1];
+  var _syncing = React.useState(false), syncing = _syncing[0], setSyncing = _syncing[1];
+
+  function reload(){
+    sb.from('qb_connection_status').select('*').maybeSingle().then(function(r){
+      setStatus(r.data || {connected:false});
+    });
+  }
+  React.useEffect(reload, []);
+
+  React.useEffect(function(){
+    var params = new URLSearchParams(loc.search);
+    if (params.get('qb_connected')){ setMsg('✅ QuickBooks connected successfully!'); reload(); }
+    if (params.get('qb_error')){ setMsg('⚠️ Connection failed: ' + params.get('qb_error')); }
+  }, [loc.search]);
+
+  var d = useData();
+  async function syncOutstanding(){
+    setSyncing(true); setMsg('');
+    try{
+      var toSync = d.invoices.filter(function(i){return i.status==='paid';}).slice(0,10);
+      var okCount = 0;
+      for (var i=0;i<toSync.length;i++){
+        try{ await qbSync('sync_invoice', toSync[i].id); okCount++; }catch(e){ console.warn('sync failed for', toSync[i].id, e); }
+      }
+      setMsg('Synced ' + okCount + ' of ' + toSync.length + ' paid invoices to QuickBooks.');
+    } catch(e){
+      setMsg('⚠️ ' + (e.message||e));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  if (!status) return null;
+  return <div className="card" style={{marginBottom:14}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+      <div>
+        <div style={{fontWeight:700,color:'var(--navy)'}}>QuickBooks Online</div>
+        <div style={{fontSize:11,color:'var(--t2)',marginTop:2}}>
+          {status.connected ? ('Connected (' + status.environment + ' mode)') : 'Not connected yet'}
+        </div>
+      </div>
+      {status.connected ?
+        <button className="btn btn-gold" disabled={syncing} onClick={syncOutstanding}>{syncing?'Syncing…':'Sync paid invoices → QuickBooks'}</button> :
+        <button className="btn btn-primary" onClick={connectQuickBooks}>Connect QuickBooks</button>
+      }
+    </div>
+    {msg ? <div style={{fontSize:12,marginTop:10,color:'var(--t2)'}}>{msg}</div> : null}
+  </div>;
+}
+
 function ReportsPage(){
   var d = useData();
   var _crew = React.useState([]), crew = _crew[0], setCrew = _crew[1];
@@ -2315,6 +2394,7 @@ function ReportsPage(){
 
   return <div>
     <div style={{fontSize:22,fontWeight:800,color:'var(--navy)',marginBottom:16}}>Reports</div>
+    <QuickBooksPanel/>
     <div className="g4" style={{marginBottom:14}}>
       <StatCard label="Total Revenue" value={fmt$(totalRev)} color="var(--green)" valColor="var(--green)"/>
       <StatCard label="Total Expenses" value={fmt$(totalExp)} color="var(--red)"/>
