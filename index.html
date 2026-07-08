@@ -766,9 +766,19 @@ function OwnerDashboard(){
   var equipNeedsAttn = d.equipment.filter(function(e){return e.status==='needs_service'||e.status==='in_repair';}).length;
 
   var thisMonth = t.slice(0,7);
+  var lastMonthDate = new Date(); lastMonthDate.setMonth(lastMonthDate.getMonth()-1);
+  var lastMonth = lastMonthDate.toISOString().slice(0,7);
   var monthRev = d.revenues.filter(function(r){return (r.date||'').slice(0,7)===thisMonth;}).reduce(function(s,r){return s+Number(r.amount||0);},0);
   var monthExp = d.expenses.filter(function(e){return (e.date||'').slice(0,7)===thisMonth;}).reduce(function(s,e){return s+Number(e.amount||0);},0);
   var monthProfit = monthRev - monthExp;
+  var prevMonthRev = d.revenues.filter(function(r){return (r.date||'').slice(0,7)===lastMonth;}).reduce(function(s,r){return s+Number(r.amount||0);},0);
+  var revGrowth = prevMonthRev>0 ? Math.round((monthRev-prevMonthRev)/prevMonthRev*100) : (monthRev>0?100:0);
+  var monthJobs = d.jobs.filter(function(j){return j.status==='completed' && (j.date||'').slice(0,7)===thisMonth;});
+  var avgTicket = monthJobs.length ? monthJobs.reduce(function(s,j){return s+Number(j.price||0);},0)/monthJobs.length : 0;
+  var newCustomersThisMonth = d.customers.filter(function(c){return (c.created_at||'').slice(0,7)===thisMonth;}).length;
+
+  var ratedJobs = d.jobs.filter(function(j){return j.rating;});
+  var avgRating = ratedJobs.length ? (ratedJobs.reduce(function(s,j){return s+Number(j.rating||0);},0)/ratedJobs.length) : null;
 
   var byService = {};
   d.jobs.filter(function(j){return j.status==='completed';}).forEach(function(j){ byService[j.service_name||'Other'] = (byService[j.service_name||'Other']||0) + Number(j.price||0); });
@@ -777,6 +787,7 @@ function OwnerDashboard(){
 
   return <div>
     {pageHead('Dashboard', new Date().toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric',year:'numeric'}))}
+    <WeatherWidget/>
     <div className="g4" style={{marginBottom:14}}>
       <StatCard label="Today's Revenue" value={fmt$(todaysRev)} color="var(--green)" valColor="var(--green)"/>
       <StatCard label="Jobs Completed Today" value={jobsCompletedToday} color="var(--gold)"/>
@@ -790,7 +801,17 @@ function OwnerDashboard(){
       <StatCard label="This Month Net Profit" value={fmt$(monthProfit)} color={monthProfit>=0?'var(--green)':'var(--red)'} valColor={monthProfit>=0?'var(--green)':'var(--red)'}/>
     </div>
 
-    <div className="g2">
+    <div className="card" style={{marginBottom:14}}>
+      <div style={{fontWeight:700,marginBottom:12,color:'var(--navy)'}}>Monthly KPIs</div>
+      <div className="g4">
+        <StatCard label="Revenue growth vs last month" value={(revGrowth>=0?'+':'')+revGrowth+'%'} valColor={revGrowth>=0?'var(--green)':'var(--red)'}/>
+        <StatCard label="Avg ticket size" value={fmt$(avgTicket)}/>
+        <StatCard label="New customers this month" value={newCustomersThisMonth}/>
+        <StatCard label="Customer satisfaction" value={avgRating?avgRating.toFixed(1)+' / 5 ⭐':'No ratings yet'} valColor={avgRating&&avgRating<4?'var(--red)':'var(--green)'}/>
+      </div>
+    </div>
+
+    <div className="g2" style={{marginBottom:14}}>
       <div className="card">
         <div style={{fontWeight:700,marginBottom:12,color:'var(--navy)'}}>Revenue by Service</div>
         {svcEntries.length ? svcEntries.map(function(e){
@@ -805,6 +826,50 @@ function OwnerDashboard(){
         <TeamProductivityMini/>
       </div>
     </div>
+
+    <div className="card">
+      <div style={{fontWeight:700,marginBottom:12,color:'var(--navy)'}}>Sales Leaderboard</div>
+      <Leaderboard/>
+    </div>
+  </div>;
+}
+
+// ── Weather widget — free Open-Meteo API, no key required ──────────
+function WeatherWidget(){
+  var d = useData();
+  var _wx = React.useState(null), wx = _wx[0], setWx = _wx[1];
+  var _err = React.useState(false), err = _err[0], setErr = _err[1];
+
+  React.useEffect(function(){
+    var url = 'https://api.open-meteo.com/v1/forecast?latitude=43.4675&longitude=-79.6877'
+      + '&current=temperature_2m,precipitation,weather_code,wind_speed_10m'
+      + '&daily=precipitation_probability_max&timezone=America%2FToronto&forecast_days=1';
+    fetch(url).then(function(r){ return r.json(); }).then(function(data){
+      if (data && data.current) setWx(data);
+      else setErr(true);
+    }).catch(function(){ setErr(true); });
+  }, []);
+
+  if (err) return null; // fail silently — weather is a nice-to-have, never block the dashboard
+  if (!wx) return <div className="card" style={{marginBottom:14,fontSize:12,color:'var(--t3)'}}>Loading weather…</div>;
+
+  var temp = Math.round(wx.current.temperature_2m);
+  var wind = Math.round(wx.current.wind_speed_10m);
+  var rainChance = wx.daily && wx.daily.precipitation_probability_max ? wx.daily.precipitation_probability_max[0] : 0;
+  var code = wx.current.weather_code;
+  var icon = code===0?'☀️':code<=3?'🌤️':code<=48?'🌫️':code<=67?'🌧️':code<=77?'❄️':code<=99?'⛈️':'🌤️';
+  var t = today();
+  var outdoorJobsToday = d.jobs.filter(function(j){return j.date===t && j.status!=='cancelled' && j.status!=='completed';}).length;
+  var risky = (rainChance>=50 || wind>=35) && outdoorJobsToday>0;
+
+  return <div className="card" style={{marginBottom:14,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap',
+    background: risky ? 'var(--redl)' : 'var(--surface)', borderColor: risky ? 'var(--red)' : 'var(--border)'}}>
+    <div style={{fontSize:32}}>{icon}</div>
+    <div>
+      <div style={{fontSize:18,fontWeight:800,color:'var(--navy)'}}>{temp}°C <span style={{fontSize:12,fontWeight:500,color:'var(--t2)'}}>· Oakville, ON</span></div>
+      <div style={{fontSize:11,color:'var(--t2)'}}>Wind {wind} km/h · {rainChance}% chance of precipitation today</div>
+    </div>
+    {risky ? <div style={{marginLeft:'auto',fontSize:12,fontWeight:700,color:'var(--red)'}}>⚠️ Weather may impact {outdoorJobsToday} job{outdoorJobsToday===1?'':'s'} scheduled today</div> : null}
   </div>;
 }
 
@@ -910,7 +975,7 @@ function TechDashboard(){
 
 
 // ═══════════════════════════════════════════════════════════════
-// CUSTOMERS — list + full profile detail
+// CUSTOMERS — list + full profile detail (docs, warranty, payments, delete)
 // ═══════════════════════════════════════════════════════════════
 var CUSTOMER_TAGS = ['Residential','Commercial','HOA','Annual Plan','VIP','Referral Source'];
 
@@ -961,7 +1026,7 @@ function CustomerFormModal(props){
   var existing = props.customer || null;
   var _f = React.useState(existing || {
     first_name:'',last_name:'',phone:'',email:'',address:'',property_type:'Residential',
-    gate_code:'',pets:'',preferred_contact:'call',referral_source:'',tags:[],notes:''
+    gate_code:'',pets:'',preferred_contact:'call',referral_source:'',tags:[],notes:'',warranty_info:''
   });
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(p){var n=Object.assign({},p);n[k]=v;return n;}); }
@@ -974,8 +1039,19 @@ function CustomerFormModal(props){
     props.onClose();
   }
 
+  async function del(){
+    if (!existing) return;
+    if (!confirm('Delete '+existing.first_name+' '+existing.last_name+'? Their jobs, quotes, and invoices will remain but will no longer be linked to a customer record. This cannot be undone.')) return;
+    await d.remove('v2_customers', existing.id);
+    props.onClose();
+  }
+
   return <Modal open title={existing?'Edit customer':'New customer'} onClose={props.onClose} footer={
-    <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Save</button></React.Fragment>
+    <React.Fragment>
+      {existing ? <button className="btn btn-danger" onClick={del} style={{marginRight:'auto'}}>Delete customer</button> : null}
+      <button className="btn" onClick={props.onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={save}>Save</button>
+    </React.Fragment>
   }>
     <div className="g2">
       <Field label="First name *"><input value={f.first_name} onChange={function(e){upd('first_name',e.target.value);}}/></Field>
@@ -1007,6 +1083,7 @@ function CustomerFormModal(props){
         })}
       </div>
     </Field>
+    <Field label="Warranty information"><textarea rows={2} value={f.warranty_info} onChange={function(e){upd('warranty_info',e.target.value);}} placeholder="e.g. 2-year warranty on interlocking work, expires June 2027"/></Field>
     <Field label="Notes"><textarea rows={3} value={f.notes} onChange={function(e){upd('notes',e.target.value);}}/></Field>
   </Modal>;
 }
@@ -1021,11 +1098,27 @@ function CustomerDetailModal(props){
   var jobs = d.jobs.filter(function(j){return j.customer_id===c.id;}).sort(function(a,b){return (b.date||'')>(a.date||'')?1:-1;});
   var quotes = d.quotes.filter(function(q){return q.customer_id===c.id;});
   var invoices = d.invoices.filter(function(i){return i.customer_id===c.id;});
+  var payments = invoices.filter(function(i){return i.status==='paid';});
   var comms = d.comms.filter(function(m){return m.customer_id===c.id;}).sort(function(a,b){return (b.created_at||'')>(a.created_at||'')?1:-1;});
   var ltv = jobs.filter(function(j){return j.status==='completed';}).reduce(function(s,j){return s+Number(j.price||0);},0);
 
   var beforeAfter = [];
   jobs.forEach(function(j){ (j.photos_before||[]).forEach(function(p){beforeAfter.push({url:p,kind:'before',job:j});}); (j.photos_after||[]).forEach(function(p){beforeAfter.push({url:p,kind:'after',job:j});}); });
+
+  function handleDocUpload(e){
+    Array.prototype.forEach.call(e.target.files, function(file){
+      var reader = new FileReader();
+      reader.onload = function(ev){
+        var docs = (c.documents||[]).concat([{name:file.name, url:ev.target.result, uploaded:new Date().toISOString()}]);
+        d.update('v2_customers', c.id, {documents:docs});
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  function removeDoc(idx){
+    var docs = (c.documents||[]).filter(function(_,i){return i!==idx;});
+    d.update('v2_customers', c.id, {documents:docs});
+  }
 
   return <Modal open large title={c.first_name+' '+c.last_name} onClose={props.onClose}>
     <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
@@ -1034,7 +1127,7 @@ function CustomerDetailModal(props){
       <StatCard label="Property" value={c.property_type||'—'}/>
     </div>
     <div className="tabs" style={{marginBottom:14}}>
-      {['info','jobs','quotes','invoices','photos','notes'].map(function(tb){
+      {['info','jobs','quotes','invoices','payments','photos','documents','notes'].map(function(tb){
         return <button key={tb} className={cls('tab', tab===tb&&'active')} onClick={function(){setTab(tb);}}>{tb[0].toUpperCase()+tb.slice(1)}</button>;
       })}
       <button className="btn btn-sm btn-gold" style={{marginLeft:'auto'}} onClick={function(){setEditing(true);}}>✏️ Edit</button>
@@ -1049,6 +1142,7 @@ function CustomerDetailModal(props){
       <div><label>Preferred contact</label><div style={{textTransform:'capitalize'}}>{c.preferred_contact||'—'}</div></div>
       <div><label>Referral source</label><div>{c.referral_source||'—'}</div></div>
       <div style={{gridColumn:'1/-1'}}><label>Tags</label><div>{(c.tags||[]).map(function(t){return <span key={t} className="badge bb" style={{marginRight:4}}>{t}</span>;}) || '—'}</div></div>
+      {c.warranty_info ? <div style={{gridColumn:'1/-1'}}><label>Warranty information</label><div style={{background:'var(--goldl)',padding:8,borderRadius:8,fontSize:12}}>{c.warranty_info}</div></div> : null}
     </div>}
 
     {tab==='jobs' && (jobs.length ? jobs.map(function(j){
@@ -1071,9 +1165,33 @@ function CustomerDetailModal(props){
       </div>;
     }) : <div className="empty">No invoices yet</div>)}
 
+    {tab==='payments' && (payments.length ? <React.Fragment>
+      <StatCard label="Total paid" value={fmt$(payments.reduce(function(s,p){return s+Number(p.amount||0);},0))} valColor="var(--green)"/>
+      <div style={{height:10}}/>
+      {payments.map(function(p){
+        return <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+          <span>Invoice #{p.num} — {p.paid_at?fmtD(p.paid_at.split('T')[0]):'—'} {p.method?'· '+p.method:''}</span>
+          <span style={{fontWeight:700,color:'var(--green)'}}>{fmt$(p.amount)}</span>
+        </div>;
+      })}
+    </React.Fragment> : <div className="empty">No payments recorded yet</div>)}
+
     {tab==='photos' && (beforeAfter.length ? <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
       {beforeAfter.map(function(p,i){ return <div key={i} style={{position:'relative'}}><img src={p.url} style={{width:'100%',height:100,objectFit:'cover',borderRadius:8}}/><span className="badge bx" style={{position:'absolute',top:4,left:4}}>{p.kind}</span></div>; })}
     </div> : <div className="empty">No photos yet</div>)}
+
+    {tab==='documents' && <div>
+      <div style={{marginBottom:10}}>
+        <input type="file" multiple onChange={handleDocUpload}/>
+        <div style={{fontSize:11,color:'var(--t3)',marginTop:4}}>Upload contracts, warranty certificates, permits, or any other files for this customer.</div>
+      </div>
+      {(c.documents||[]).length ? (c.documents||[]).map(function(doc,i){
+        return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+          <a href={doc.url} download={doc.name} style={{fontSize:12,color:'var(--blue)',textDecoration:'none'}}>📄 {doc.name}</a>
+          <button className="btn btn-sm btn-danger" onClick={function(){removeDoc(i);}}>Remove</button>
+        </div>;
+      }) : <div className="empty">No documents uploaded yet</div>}
+    </div>}
 
     {tab==='notes' && <div>
       <div style={{marginBottom:12,padding:10,background:'var(--bg)',borderRadius:8,fontSize:13}}>{c.notes||'No notes on file.'}</div>
@@ -1091,12 +1209,13 @@ function CustomerDetailModal(props){
 
 
 // ═══════════════════════════════════════════════════════════════
-// LEADS — pipeline board
+// LEADS — pipeline board, full edit/delete
 // ═══════════════════════════════════════════════════════════════
 function LeadsPage(){
   var d = useData();
   var auth = useAuth();
   var _new = React.useState(false), showNew = _new[0], setShowNew = _new[1];
+  var _editLead = React.useState(null), editLead = _editLead[0], setEditLead = _editLead[1];
   var _crew = React.useState([]), crew = _crew[0], setCrew = _crew[1];
   React.useEffect(function(){ sb.from('app_crew').select('*').then(function(r){setCrew(r.data||[]);}); }, []);
 
@@ -1107,7 +1226,8 @@ function LeadsPage(){
     return r ? r.first_name : 'Unassigned';
   }
 
-  async function moveStage(lead, dir){
+  async function moveStage(lead, dir, e){
+    if (e) e.stopPropagation();
     var idx = LEAD_STAGES.findIndex(function(s){return s.key===lead.stage;});
     var next = LEAD_STAGES[idx+dir];
     if (!next) return;
@@ -1119,6 +1239,7 @@ function LeadsPage(){
       <div style={{fontSize:22,fontWeight:800,color:'var(--navy)'}}>{auth.role==='sales'?'My Leads':'Leads Pipeline'}</div>
       <button className="btn btn-primary" onClick={function(){setShowNew(true);}}>+ New lead</button>
     </div>
+    <div style={{fontSize:11,color:'var(--t3)',marginBottom:10}}>Click a lead card to edit or delete it.</div>
     <div style={{display:'flex',gap:10,overflowX:'auto',paddingBottom:10}}>
       {LEAD_STAGES.map(function(stage, si){
         var col = leads.filter(function(l){return l.stage===stage.key;});
@@ -1129,14 +1250,14 @@ function LeadsPage(){
           </div>
           {col.map(function(l){
             var c = d.getCustomer(l.customer_id);
-            return <div key={l.id} className="card" style={{marginBottom:8,padding:10}}>
+            return <div key={l.id} className="card" style={{marginBottom:8,padding:10,cursor:'pointer'}} onClick={function(){setEditLead(l);}}>
               <div style={{fontWeight:700,fontSize:12,color:'var(--navy)'}}>{c.first_name} {c.last_name}</div>
               <div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>{l.source||'—'} · {repName(l.assigned_to)}</div>
               <div style={{fontSize:12,fontWeight:700,color:'var(--green)',marginTop:4}}>{fmt$(l.est_value)}</div>
               {l.next_followup ? <div style={{fontSize:10,color:'var(--amber)',marginTop:2}}>Follow up: {fmtD(l.next_followup)}</div> : null}
               <div style={{display:'flex',gap:4,marginTop:8}}>
-                <button className="btn btn-sm" onClick={function(){moveStage(l,-1);}} disabled={si===0} style={{flex:1}}>←</button>
-                <button className="btn btn-sm btn-gold" onClick={function(){moveStage(l,1);}} disabled={si===LEAD_STAGES.length-1} style={{flex:1}}>→</button>
+                <button className="btn btn-sm" onClick={function(e){moveStage(l,-1,e);}} disabled={si===0} style={{flex:1}}>←</button>
+                <button className="btn btn-sm btn-gold" onClick={function(e){moveStage(l,1,e);}} disabled={si===LEAD_STAGES.length-1} style={{flex:1}}>→</button>
               </div>
             </div>;
           })}
@@ -1144,13 +1265,19 @@ function LeadsPage(){
       })}
     </div>
     {showNew ? <LeadFormModal crew={crew} onClose={function(){setShowNew(false);}}/> : null}
+    {editLead ? <LeadFormModal crew={crew} lead={editLead} onClose={function(){setEditLead(null);}}/> : null}
   </div>;
 }
 
 function LeadFormModal(props){
   var d = useData();
   var auth = useAuth();
-  var _f = React.useState({customer_id:'',source:'',assigned_to:auth.profile.user_id,est_value:0,probability:50,next_followup:'',notes:''});
+  var existing = props.lead || null;
+  var _f = React.useState(existing ? {
+    customer_id: existing.customer_id, source: existing.source||'', assigned_to: existing.assigned_to||auth.profile.user_id,
+    est_value: existing.est_value||0, probability: existing.probability||50, next_followup: existing.next_followup||'',
+    notes: existing.notes||'', stage: existing.stage||'new'
+  } : {customer_id:'',source:'',assigned_to:auth.profile.user_id,est_value:0,probability:50,next_followup:'',notes:'',stage:'new'});
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(p){var n=Object.assign({},p);n[k]=v;return n;}); }
   var _newCust = React.useState(false), isNewCust = _newCust[0], setIsNewCust = _newCust[1];
@@ -1165,12 +1292,27 @@ function LeadFormModal(props){
       custId = created.id;
     }
     if (!custId){ alert('Select or add a customer'); return; }
-    await d.insert('v2_leads', Object.assign({}, f, {customer_id:custId, stage:'new'}));
+    if (existing){
+      await d.update('v2_leads', existing.id, Object.assign({}, f, {customer_id:custId, updated_at:new Date().toISOString()}));
+    } else {
+      await d.insert('v2_leads', Object.assign({}, f, {customer_id:custId, stage:'new'}));
+    }
     props.onClose();
   }
 
-  return <Modal open title="New lead" onClose={props.onClose} footer={
-    <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Create lead</button></React.Fragment>
+  async function del(){
+    if (!existing) return;
+    if (!confirm('Delete this lead? This cannot be undone.')) return;
+    await d.remove('v2_leads', existing.id);
+    props.onClose();
+  }
+
+  return <Modal open title={existing?'Edit lead':'New lead'} onClose={props.onClose} footer={
+    <React.Fragment>
+      {existing ? <button className="btn btn-danger" onClick={del} style={{marginRight:'auto'}}>Delete lead</button> : null}
+      <button className="btn" onClick={props.onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={save}>{existing?'Save changes':'Create lead'}</button>
+    </React.Fragment>
   }>
     <Field label="Customer">
       <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){ if(e.target.value==='__new__'){setIsNewCust(true);} else {setIsNewCust(false); upd('customer_id',e.target.value);} }}>
@@ -1185,6 +1327,11 @@ function LeadFormModal(props){
       <Field label="Phone"><input value={nc.phone} onChange={function(e){setNc(Object.assign({},nc,{phone:e.target.value}));}}/></Field>
       <Field label="Address"><input value={nc.address} onChange={function(e){setNc(Object.assign({},nc,{address:e.target.value}));}}/></Field>
     </div>}
+    {existing ? <Field label="Stage">
+      <select value={f.stage} onChange={function(e){upd('stage',e.target.value);}}>
+        {LEAD_STAGES.map(function(s){return <option key={s.key} value={s.key}>{s.label}</option>;})}
+      </select>
+    </Field> : null}
     <div className="g2">
       <Field label="Lead source">
         <select value={f.source} onChange={function(e){upd('source',e.target.value);}}>
@@ -1197,6 +1344,7 @@ function LeadFormModal(props){
         </select>
       </Field>
       <Field label="Estimated value ($)"><input type="number" value={f.est_value} onChange={function(e){upd('est_value',e.target.value);}}/></Field>
+      <Field label="Probability (%)"><input type="number" min="0" max="100" value={f.probability} onChange={function(e){upd('probability',e.target.value);}}/></Field>
       <Field label="Next follow-up"><input type="date" value={f.next_followup} onChange={function(e){upd('next_followup',e.target.value);}}/></Field>
     </div>
     <Field label="Notes"><textarea rows={3} value={f.notes} onChange={function(e){upd('notes',e.target.value);}}/></Field>
@@ -1205,16 +1353,17 @@ function LeadFormModal(props){
 
 
 // ═══════════════════════════════════════════════════════════════
-// QUOTES / ESTIMATING
+// QUOTES / ESTIMATING — create, edit, delete
 // ═══════════════════════════════════════════════════════════════
 function QuotesPage(){
   var d = useData();
   var _new = React.useState(false), showNew = _new[0], setShowNew = _new[1];
+  var _edit = React.useState(null), editQuote = _edit[0], setEditQuote = _edit[1];
   var _filter = React.useState('all'), filter = _filter[0], setFilter = _filter[1];
 
   var filtered = d.quotes.filter(function(q){return filter==='all'||q.status===filter;});
 
-  async function setStatus(q, status){ await d.update('v2_quotes', q.id, {status:status}); }
+  async function setStatus(q, status, e){ if(e) e.stopPropagation(); await d.update('v2_quotes', q.id, {status:status}); }
 
   return <div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:10}}>
@@ -1231,16 +1380,17 @@ function QuotesPage(){
         <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
         <tbody>{filtered.map(function(q){
           var c = d.getCustomer(q.customer_id);
-          return <tr key={q.id}>
+          return <tr key={q.id} style={{cursor:'pointer'}} onClick={function(){setEditQuote(q);}}>
             <td>{q.num}</td><td>{c.first_name} {c.last_name}</td><td style={{fontWeight:700}}>{fmt$(q.total)}</td>
             <td><span className={cls('badge', q.status==='approved'?'bg':q.status==='declined'?'br':q.status==='sent'?'bb':'bx')}>{q.status}</span></td>
             <td>{fmtD(q.date)}</td>
-            <td>
+            <td onClick={function(e){e.stopPropagation();}}>
               {q.status==='sent' && <React.Fragment>
-                <button className="btn btn-sm btn-green" onClick={function(){setStatus(q,'approved');}}>Approve</button>{' '}
-                <button className="btn btn-sm btn-danger" onClick={function(){setStatus(q,'declined');}}>Decline</button>
+                <button className="btn btn-sm btn-green" onClick={function(e){setStatus(q,'approved',e);}}>Approve</button>{' '}
+                <button className="btn btn-sm btn-danger" onClick={function(e){setStatus(q,'declined',e);}}>Decline</button>
               </React.Fragment>}
-              {q.status==='draft' && <button className="btn btn-sm" onClick={function(){setStatus(q,'sent');}}>Mark sent</button>}
+              {q.status==='draft' && <button className="btn btn-sm" onClick={function(e){setStatus(q,'sent',e);}}>Mark sent</button>}
+              {' '}<button className="btn btn-sm" onClick={function(e){e.stopPropagation();setEditQuote(q);}}>Edit</button>
             </td>
           </tr>;
         })}</tbody>
@@ -1248,16 +1398,27 @@ function QuotesPage(){
       {!filtered.length ? <div className="empty">No quotes</div> : null}
     </div>
     {showNew ? <QuoteFormModal onClose={function(){setShowNew(false);}}/> : null}
+    {editQuote ? <QuoteFormModal quote={editQuote} onClose={function(){setEditQuote(null);}}/> : null}
   </div>;
 }
 
 function QuoteFormModal(props){
   var d = useData();
-  var _custId = React.useState(''), custId = _custId[0], setCustId = _custId[1];
-  var _items = React.useState([{service:'',qty:1,price:0}]), items = _items[0], setItems = _items[1];
-  var _sig = React.useState(''), sig = _sig[0], setSig = _sig[1];
+  var existing = props.quote || null;
+  var _custId = React.useState(existing ? existing.customer_id : ''), custId = _custId[0], setCustId = _custId[1];
+  var _items = React.useState(existing && existing.items && existing.items.length ? existing.items : [{service:'',qty:1,price:0}]), items = _items[0], setItems = _items[1];
+  var _sig = React.useState(existing ? (existing.signature||'') : ''), sig = _sig[0], setSig = _sig[1];
   var canvasRef = React.useRef(null);
   var drawing = React.useRef(false);
+
+  // If editing a quote that already has a saved signature, draw it onto the canvas once mounted
+  React.useEffect(function(){
+    if (existing && existing.signature && canvasRef.current){
+      var img = new Image();
+      img.onload = function(){ var ctx = canvasRef.current.getContext('2d'); ctx.drawImage(img,0,0); };
+      img.src = existing.signature;
+    }
+  }, []);
 
   function addItem(){ setItems(items.concat([{service:'',qty:1,price:0}])); }
   function updItem(i,k,v){ setItems(items.map(function(it,idx){ if(idx!==i) return it; var n=Object.assign({},it); n[k]=v; return n; })); }
@@ -1278,8 +1439,6 @@ function QuoteFormModal(props){
     drawing.current=true;
     var c = canvasRef.current; if(!c) return;
     var p = getPos(e, c);
-    // Reset the path to the touch-down point FIRST so the initial stroke never
-    // draws a stray line from the canvas's default (0,0) origin.
     var ctx = c.getContext('2d');
     ctx.beginPath(); ctx.moveTo(p.x, p.y);
   }
@@ -1299,16 +1458,33 @@ function QuoteFormModal(props){
 
   async function save(){
     if (!custId){ alert('Select a customer'); return; }
-    var num = Math.floor(1000+Math.random()*9000);
-    await d.insert('v2_quotes', {
-      num:num, customer_id:custId, items:items, subtotal:subtotal, tax:tax, total:total,
-      status:'draft', date: today(), signature: sig
-    });
+    if (existing){
+      await d.update('v2_quotes', existing.id, {
+        customer_id:custId, items:items, subtotal:subtotal, tax:tax, total:total, signature:sig
+      });
+    } else {
+      var num = Math.floor(1000+Math.random()*9000);
+      await d.insert('v2_quotes', {
+        num:num, customer_id:custId, items:items, subtotal:subtotal, tax:tax, total:total,
+        status:'draft', date: today(), signature: sig
+      });
+    }
     props.onClose();
   }
 
-  return <Modal open large title="New estimate" onClose={props.onClose} footer={
-    <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Save estimate</button></React.Fragment>
+  async function del(){
+    if (!existing) return;
+    if (!confirm('Delete quote #'+existing.num+'? This cannot be undone.')) return;
+    await d.remove('v2_quotes', existing.id);
+    props.onClose();
+  }
+
+  return <Modal open large title={existing?('Edit estimate #'+existing.num):'New estimate'} onClose={props.onClose} footer={
+    <React.Fragment>
+      {existing ? <button className="btn btn-danger" onClick={del} style={{marginRight:'auto'}}>Delete quote</button> : null}
+      <button className="btn" onClick={props.onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={save}>{existing?'Save changes':'Save estimate'}</button>
+    </React.Fragment>
   }>
     <Field label="Customer">
       <select value={custId} onChange={function(e){setCustId(e.target.value);}}>
@@ -1465,6 +1641,7 @@ function JobDetailModal(props){
   var _notes = React.useState(job.notes||''), notes = _notes[0], setNotes = _notes[1];
   var _before = React.useState(job.photos_before||[]), before = _before[0], setBefore = _before[1];
   var _after = React.useState(job.photos_after||[]), after = _after[0], setAfter = _after[1];
+  var _rating = React.useState(job.rating||0), rating = _rating[0], setRating = _rating[1];
 
   function toggleCheck(i){ setChecklist(checklist.map(function(it,idx){ return idx===i ? Object.assign({},it,{done:!it.done}) : it; })); }
 
@@ -1478,7 +1655,8 @@ function JobDetailModal(props){
 
   async function save(){
     await d.update('v2_jobs', job.id, {
-      status:status, notes:notes, checklist:checklist, photos_before:before, photos_after:after
+      status:status, notes:notes, checklist:checklist, photos_before:before, photos_after:after,
+      rating: rating || null
     });
     if (status==='completed' && job.status!=='completed' && job.price>0){
       await d.insert('v2_revenues', {
@@ -1516,6 +1694,17 @@ function JobDetailModal(props){
       </label>;
     })}
 
+    {status==='completed' && <div style={{margin:'14px 0'}}>
+      <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>Customer satisfaction rating</div>
+      <div style={{display:'flex',gap:6}}>
+        {[1,2,3,4,5].map(function(n){
+          return <button key={n} type="button" onClick={function(){setRating(n===rating?0:n);}}
+            style={{fontSize:24,background:'none',border:'none',cursor:'pointer',opacity: n<=rating?1:0.25}}>⭐</button>;
+        })}
+        {rating ? <span style={{fontSize:11,color:'var(--t2)',alignSelf:'center',marginLeft:6}}>{rating} / 5</span> : <span style={{fontSize:11,color:'var(--t3)',alignSelf:'center',marginLeft:6}}>Not rated</span>}
+      </div>
+    </div>}
+
     <div className="g2" style={{marginTop:14}}>
       <div>
         <div style={{fontWeight:700,fontSize:12,marginBottom:8}}>Before photos</div>
@@ -1539,25 +1728,39 @@ function JobDetailModal(props){
 
 
 // ═══════════════════════════════════════════════════════════════
-// SCHEDULE — drag-and-drop weekly calendar (native HTML5 DnD)
+// SCHEDULE — drag-and-drop calendar, week view OR custom date range
 // ═══════════════════════════════════════════════════════════════
 function getWeekStartISO(){
   var now = new Date(); var day = now.getDay(); var diff = now.getDate()-day;
   return new Date(now.setDate(diff)).toISOString().split('T')[0];
 }
+function addDaysISO(iso, n){
+  var dt = new Date(iso+'T00:00:00'); dt.setDate(dt.getDate()+n);
+  return dt.toISOString().split('T')[0];
+}
+function daysBetween(fromISO, toISO){
+  var a = new Date(fromISO+'T00:00:00'), b = new Date(toISO+'T00:00:00');
+  return Math.round((b-a)/86400000);
+}
 
 function SchedulePage(){
   var d = useData();
   var auth = useAuth();
+  var _mode = React.useState('week'), mode = _mode[0], setMode = _mode[1]; // 'week' | 'range'
   var _ws = React.useState(getWeekStartISO), _weekStart = _ws[0], _setWeekStart = _ws[1];
+  var _from = React.useState(today), rangeFrom = _from[0], setRangeFrom = _from[1];
+  var _to = React.useState(function(){ return addDaysISO(today(), 13); }), rangeTo = _to[0], setRangeTo = _to[1];
   var _crew = React.useState([]), crew = _crew[0], setCrew = _crew[1];
   React.useEffect(function(){ sb.from('app_crew').select('*').eq('status','active').then(function(r){setCrew(r.data||[]);}); }, []);
   var _dragId = React.useState(null), dragId = _dragId[0], setDragId = _dragId[1];
 
   var days = [];
-  for (var i=0;i<7;i++){
-    var dt = new Date(_weekStart+'T00:00:00'); dt.setDate(dt.getDate()+i);
-    days.push(dt.toISOString().split('T')[0]);
+  if (mode==='week'){
+    for (var i=0;i<7;i++) days.push(addDaysISO(_weekStart, i));
+  } else {
+    var span = daysBetween(rangeFrom, rangeTo);
+    var capped = Math.min(Math.max(span,0), 90); // hard safety cap so a huge range can't freeze the page
+    for (var j=0;j<=capped;j++) days.push(addDaysISO(rangeFrom, j));
   }
 
   var visibleJobs = auth.role==='tech' ? d.jobs.filter(function(j){return j.crew_id===auth.profile.user_id;}) : d.jobs;
@@ -1570,65 +1773,108 @@ function SchedulePage(){
     setDragId(null);
   }
 
-  function shiftWeek(delta){
-    var dt = new Date(_weekStart+'T00:00:00'); dt.setDate(dt.getDate()+delta*7);
-    _setWeekStart(dt.toISOString().split('T')[0]);
-  }
-
+  function shiftWeek(delta){ _setWeekStart(addDaysISO(_weekStart, delta*7)); }
   function crewName(id){ var c = crew.find(function(x){return x.user_id===id;}); return c ? c.first_name : ''; }
 
+  var STATUS_COLOR = { scheduled:'var(--blue)', 'in-progress':'var(--gold)', completed:'var(--green)', cancelled:'var(--red)' };
+
+  function JobCard(j){
+    var c = d.getCustomer(j.customer_id);
+    return <div key={j.id} draggable
+      onDragStart={function(){setDragId(j.id);}}
+      style={{background:'#fff',border:'1px solid var(--border)',borderLeft:'3px solid '+(STATUS_COLOR[j.status]||'var(--border)'),borderRadius:8,padding:6,marginBottom:6,cursor:'grab',fontSize:11}}>
+      <div style={{fontWeight:700,color:'var(--navy)'}}>{fmt12(j.time)}</div>
+      <div>{c.first_name} {c.last_name}</div>
+      <div style={{color:'var(--t3)'}}>{j.service_name}</div>
+      {j.crew_id ? <div style={{color:'var(--blue)',marginTop:2}}>👤 {crewName(j.crew_id)}</div> : <div style={{color:'var(--red)'}}>Unassigned</div>}
+    </div>;
+  }
+
   return <div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:10}}>
       <div style={{fontSize:22,fontWeight:800,color:'var(--navy)'}}>Schedule</div>
-      <div style={{display:'flex',gap:8}}>
-        <button className="btn btn-sm" onClick={function(){shiftWeek(-1);}}>← Prev week</button>
-        <button className="btn btn-sm" onClick={function(){shiftWeek(1);}}>Next week →</button>
+      <div className="tabs">
+        <button className={cls('tab',mode==='week'&&'active')} onClick={function(){setMode('week');}}>Week view</button>
+        <button className={cls('tab',mode==='range'&&'active')} onClick={function(){setMode('range');}}>Custom range</button>
       </div>
     </div>
+
+    {mode==='week' ? (
+      <div style={{display:'flex',gap:8,marginBottom:10}}>
+        <button className="btn btn-sm" onClick={function(){shiftWeek(-1);}}>← Prev week</button>
+        <button className="btn btn-sm" onClick={function(){_setWeekStart(getWeekStartISO());}}>This week</button>
+        <button className="btn btn-sm" onClick={function(){shiftWeek(1);}}>Next week →</button>
+      </div>
+    ) : (
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:10,flexWrap:'wrap'}}>
+        <span style={{fontSize:11,fontWeight:700,color:'var(--t2)'}}>From</span>
+        <input type="date" value={rangeFrom} onChange={function(e){setRangeFrom(e.target.value);}} style={{width:150}}/>
+        <span style={{fontSize:11,fontWeight:700,color:'var(--t2)'}}>To</span>
+        <input type="date" value={rangeTo} onChange={function(e){setRangeTo(e.target.value);}} style={{width:150}}/>
+        {daysBetween(rangeFrom,rangeTo) > 90 ? <span style={{fontSize:11,color:'var(--red)'}}>Showing first 90 days of this range — narrow it down to see more precisely.</span> : null}
+        <div style={{display:'flex',gap:6,marginLeft:'auto'}}>
+          <button className="btn btn-sm" onClick={function(){setRangeFrom(today());setRangeTo(addDaysISO(today(),6));}}>This week</button>
+          <button className="btn btn-sm" onClick={function(){setRangeFrom(today());setRangeTo(addDaysISO(today(),29));}}>Next 30 days</button>
+          <button className="btn btn-sm" onClick={function(){setRangeFrom(today());setRangeTo(addDaysISO(today(),89));}}>Next 90 days</button>
+        </div>
+      </div>
+    )}
+
     <div style={{fontSize:11,color:'var(--t3)',marginBottom:10}}>Drag a job card onto another day to reschedule it.</div>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:8,minWidth:900,overflowX:'auto'}}>
-      {days.map(function(date){
-        var dt = new Date(date+'T00:00:00');
-        var isToday = date===today();
-        return <div key={date}
-          onDragOver={function(e){e.preventDefault();}}
-          onDrop={function(){dropOnDay(date);}}
-          style={{background:isToday?'var(--goldl)':'var(--surface)',border:'1px solid '+(isToday?'var(--gold)':'var(--border)'),borderRadius:10,padding:8,minHeight:300}}>
-          <div style={{fontSize:11,fontWeight:700,color:isToday?'var(--goldd)':'var(--t2)',marginBottom:8,textAlign:'center'}}>
-            {dt.toLocaleDateString('en-CA',{weekday:'short'})}<br/>{dt.getDate()}
-          </div>
-          {jobsForDay(date).map(function(j){
-            var c = d.getCustomer(j.customer_id);
-            return <div key={j.id} draggable
-              onDragStart={function(){setDragId(j.id);}}
-              style={{background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:6,marginBottom:6,cursor:'grab',fontSize:11}}>
-              <div style={{fontWeight:700,color:'var(--navy)'}}>{fmt12(j.time)}</div>
-              <div>{c.first_name} {c.last_name}</div>
-              <div style={{color:'var(--t3)'}}>{j.service_name}</div>
-              {j.crew_id ? <div style={{color:'var(--blue)',marginTop:2}}>👤 {crewName(j.crew_id)}</div> : <div style={{color:'var(--red)'}}>Unassigned</div>}
-            </div>;
-          })}
-        </div>;
-      })}
-    </div>
+
+    {mode==='week' ? (
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:8,minWidth:900,overflowX:'auto'}}>
+        {days.map(function(date){
+          var dt = new Date(date+'T00:00:00');
+          var isToday = date===today();
+          return <div key={date}
+            onDragOver={function(e){e.preventDefault();}}
+            onDrop={function(){dropOnDay(date);}}
+            style={{background:isToday?'var(--goldl)':'var(--surface)',border:'1px solid '+(isToday?'var(--gold)':'var(--border)'),borderRadius:10,padding:8,minHeight:300}}>
+            <div style={{fontSize:11,fontWeight:700,color:isToday?'var(--goldd)':'var(--t2)',marginBottom:8,textAlign:'center'}}>
+              {dt.toLocaleDateString('en-CA',{weekday:'short'})}<br/>{dt.getDate()}
+            </div>
+            {jobsForDay(date).map(JobCard)}
+          </div>;
+        })}
+      </div>
+    ) : (
+      <div className="grid" style={{gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))'}}>
+        {days.map(function(date){
+          var dt = new Date(date+'T00:00:00');
+          var isToday = date===today();
+          var jobsThisDay = jobsForDay(date);
+          return <div key={date}
+            onDragOver={function(e){e.preventDefault();}}
+            onDrop={function(){dropOnDay(date);}}
+            style={{background:isToday?'var(--goldl)':'var(--surface)',border:'1px solid '+(isToday?'var(--gold)':'var(--border)'),borderRadius:10,padding:8,minHeight:110}}>
+            <div style={{fontSize:11,fontWeight:700,color:isToday?'var(--goldd)':'var(--t2)',marginBottom:8}}>
+              {dt.toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric'})}
+            </div>
+            {jobsThisDay.length ? jobsThisDay.map(JobCard) : <div style={{fontSize:10,color:'var(--t3)'}}>No jobs</div>}
+          </div>;
+        })}
+      </div>
+    )}
   </div>;
 }
 
 
 // ═══════════════════════════════════════════════════════════════
-// INVOICES & PAYMENTS
+// INVOICES & PAYMENTS — create, edit, delete
 // ═══════════════════════════════════════════════════════════════
 function InvoicesPage(){
   var d = useData();
   var _new = React.useState(false), showNew = _new[0], setShowNew = _new[1];
+  var _edit = React.useState(null), editInv = _edit[0], setEditInv = _edit[1];
   var _filter = React.useState('all'), filter = _filter[0], setFilter = _filter[1];
 
   var filtered = d.invoices.filter(function(i){return filter==='all'||i.status===filter;});
   var outstanding = d.invoices.filter(function(i){return i.status!=='paid';}).reduce(function(s,i){return s+Number(i.amount||0);},0);
 
   var markingPaid = React.useRef({});
-  async function markPaid(inv, method){
-    // Guard against double-firing (rapid double-click) creating duplicate revenue rows
+  async function markPaid(inv, method, e){
+    if (e) e.stopPropagation();
     if (inv.status==='paid' || markingPaid.current[inv.id]) return;
     markingPaid.current[inv.id] = true;
     try{
@@ -1663,37 +1909,65 @@ function InvoicesPage(){
         <thead><tr><th>#</th><th>Customer</th><th>Amount</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>{filtered.map(function(inv){
           var c = d.getCustomer(inv.customer_id);
-          return <tr key={inv.id}>
+          return <tr key={inv.id} style={{cursor:'pointer'}} onClick={function(){setEditInv(inv);}}>
             <td>{inv.num}</td><td>{c.first_name} {c.last_name}</td><td style={{fontWeight:700}}>{fmt$(inv.amount)}</td>
             <td>{fmtD(inv.due)}</td>
             <td><span className={cls('badge', inv.status==='paid'?'bg':inv.status==='overdue'?'br':'ba')}>{inv.status}</span></td>
-            <td>{inv.status!=='paid' && <select defaultValue="" onChange={function(e){ if(e.target.value) markPaid(inv, e.target.value); }}>
-              <option value="">Mark paid via…</option><option value="etransfer">E-Transfer</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="card">Card</option>
-            </select>}</td>
+            <td onClick={function(e){e.stopPropagation();}}>
+              {inv.status!=='paid' && <select defaultValue="" onChange={function(e){ if(e.target.value) markPaid(inv, e.target.value); }}>
+                <option value="">Mark paid via…</option><option value="etransfer">E-Transfer</option><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="card">Card</option>
+              </select>}
+              {' '}<button className="btn btn-sm" onClick={function(e){e.stopPropagation();setEditInv(inv);}}>Edit</button>
+            </td>
           </tr>;
         })}</tbody>
       </table>
       {!filtered.length ? <div className="empty">No invoices</div> : null}
     </div>
     {showNew ? <InvoiceFormModal onClose={function(){setShowNew(false);}}/> : null}
+    {editInv ? <InvoiceFormModal invoice={editInv} onClose={function(){setEditInv(null);}}/> : null}
   </div>;
 }
 
 function InvoiceFormModal(props){
   var d = useData();
-  var _f = React.useState({customer_id:'',service:'',amount:0,due:today(),notes:''});
+  var existing = props.invoice || null;
+  var _f = React.useState(existing ? {
+    customer_id:existing.customer_id, service:existing.service||'', amount:existing.amount||0,
+    due:existing.due||today(), notes:existing.notes||''
+  } : {customer_id:'',service:'',amount:0,due:today(),notes:''});
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(p){var n=Object.assign({},p);n[k]=v;return n;}); }
 
   async function save(){
     if (!f.customer_id){ alert('Select a customer'); return; }
-    var num = Math.floor(1000+Math.random()*9000);
-    await d.insert('v2_invoices', Object.assign({}, f, {num:num, status:'sent'}));
+    if (existing){
+      await d.update('v2_invoices', existing.id, f);
+    } else {
+      var num = Math.floor(1000+Math.random()*9000);
+      await d.insert('v2_invoices', Object.assign({}, f, {num:num, status:'sent'}));
+    }
     props.onClose();
   }
 
-  return <Modal open title="New invoice" onClose={props.onClose} footer={
-    <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Create invoice</button></React.Fragment>
+  async function del(){
+    if (!existing) return;
+    if (!confirm('Delete invoice #'+existing.num+'? This cannot be undone.'+(existing.status==='paid'?' The matching revenue entry will also be removed.':''))) return;
+    // If this invoice was paid, remove its auto-generated revenue entry too so totals stay accurate
+    if (existing.status==='paid'){
+      var match = d.revenues.find(function(r){return r.auto_key==='auto_inv_'+existing.id;});
+      if (match) await d.remove('v2_revenues', match.id);
+    }
+    await d.remove('v2_invoices', existing.id);
+    props.onClose();
+  }
+
+  return <Modal open title={existing?('Edit invoice #'+existing.num):'New invoice'} onClose={props.onClose} footer={
+    <React.Fragment>
+      {existing ? <button className="btn btn-danger" onClick={del} style={{marginRight:'auto'}}>Delete invoice</button> : null}
+      <button className="btn" onClick={props.onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={save}>{existing?'Save changes':'Create invoice'}</button>
+    </React.Fragment>
   }>
     <Field label="Customer">
       <select value={f.customer_id} onChange={function(e){upd('customer_id',e.target.value);}}>
@@ -2185,10 +2459,21 @@ function PinModal(props){
   var _f = React.useState({addr:p.addr||'', status:p.status||'not-visited', notes:p.notes||'', customer_id:p.customer_id||''});
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(prev){var n=Object.assign({},prev);n[k]=v;return n;}); }
+  var _newCust = React.useState(false), isNewCust = _newCust[0], setIsNewCust = _newCust[1];
+  var _nc = React.useState({first_name:'', last_name:'', phone:''});
+  var nc = _nc[0], setNc = _nc[1];
 
   async function save(){
-    if (isNew) await d.insert('v2_map_pins', {lat:p.lat, lng:p.lng, addr:f.addr, status:f.status, notes:f.notes, customer_id:f.customer_id, date:today()});
-    else await d.update('v2_map_pins', p.id, {addr:f.addr, status:f.status, notes:f.notes, customer_id:f.customer_id});
+    var custId = f.customer_id;
+    if (isNewCust){
+      if (!nc.first_name){ alert("Enter the new customer's first name"); return; }
+      var created = await d.insert('v2_customers', {
+        first_name: nc.first_name, last_name: nc.last_name, phone: nc.phone, address: f.addr
+      });
+      custId = created.id;
+    }
+    if (isNew) await d.insert('v2_map_pins', {lat:p.lat, lng:p.lng, addr:f.addr, status:f.status, notes:f.notes, customer_id:custId, date:today()});
+    else await d.update('v2_map_pins', p.id, {addr:f.addr, status:f.status, notes:f.notes, customer_id:custId});
     props.onClose();
   }
   async function remove(){
@@ -2210,11 +2495,20 @@ function PinModal(props){
       </select>
     </Field>
     <Field label="Link to customer">
-      <select value={f.customer_id} onChange={function(e){upd('customer_id',e.target.value);}}>
+      <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){
+        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id', e.target.value); }
+      }}>
         <option value="">None</option>
         {d.customers.map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        <option value="__new__">+ New customer…</option>
       </select>
     </Field>
+    {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
+      <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
+      <Field label="Last name"><input value={nc.last_name} onChange={function(e){setNc(Object.assign({},nc,{last_name:e.target.value}));}}/></Field>
+      <Field label="Phone"><input value={nc.phone} onChange={function(e){setNc(Object.assign({},nc,{phone:e.target.value}));}}/></Field>
+      <div style={{fontSize:11,color:'var(--t2)',alignSelf:'flex-end',paddingBottom:8}}>Address will be set to: {f.addr||'(pin location)'}</div>
+    </div>}
     <Field label="Notes"><textarea rows={2} value={f.notes} onChange={function(e){upd('notes',e.target.value);}}/></Field>
   </Modal>;
 }
