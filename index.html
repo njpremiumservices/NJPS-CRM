@@ -677,15 +677,18 @@ var NAV_SECTIONS = {
       {to:'/', label:'Dashboard', icon:'📊'},
       {to:'/leads', label:'My Leads', icon:'🎯'},
       {to:'/quotes', label:'Estimates', icon:'📝'},
-      {to:'/customers', label:'Customers', icon:'👤'},
+      {to:'/customers', label:'My Clients', icon:'👤'},
       {to:'/schedule', label:'Schedule', icon:'📅'},
-      {to:'/map', label:'Territory Map', icon:'📍'}
+      {to:'/map', label:'Territory Map', icon:'📍'},
+      {to:'/team', label:'My Sales', icon:'⏱️'}
     ]}
   ],
   tech: [
     {group:'My Work', items:[
       {to:'/', label:"Today's Route", icon:'🚐'},
       {to:'/jobs', label:'My Jobs', icon:'🔧'},
+      {to:'/customers', label:'My Clients', icon:'👤'},
+      {to:'/map', label:'Territory Map', icon:'📍'},
       {to:'/team', label:'My Hours', icon:'⏱️'}
     ]}
   ]
@@ -1082,11 +1085,33 @@ var CUSTOMER_TAGS = ['Residential','Commercial','HOA','Annual Plan','VIP','Refer
 
 function CustomersPage(){
   var d = useData();
+  var auth = useAuth();
   var _q = React.useState(''), q = _q[0], setQ = _q[1];
   var _open = React.useState(null), openId = _open[0], setOpenId = _open[1];
   var _new = React.useState(false), showNew = _new[0], setShowNew = _new[1];
 
-  var filtered = d.customers.filter(function(c){
+  // Owners see every customer. Sales reps and technicians only see customers
+  // tied to work they personally did — their own leads (sales) or their own
+  // assigned jobs (tech). This keeps each person's view scoped to their own
+  // clients, not the whole company's customer list.
+  var visibleCustomers = d.customers;
+  if (auth.role !== 'owner'){
+    var myId = auth.profile.user_id;
+    var myCustomerIds = {};
+    if (auth.role === 'sales'){
+      d.leads.filter(function(l){return l.assigned_to===myId;}).forEach(function(l){ myCustomerIds[l.customer_id]=true; });
+      d.quotes.forEach(function(q){
+        var lead = d.leads.find(function(l){return l.customer_id===q.customer_id && l.assigned_to===myId;});
+        if (lead) myCustomerIds[q.customer_id]=true;
+      });
+    }
+    if (auth.role === 'tech'){
+      d.jobs.filter(function(j){return j.crew_id===myId;}).forEach(function(j){ myCustomerIds[j.customer_id]=true; });
+    }
+    visibleCustomers = d.customers.filter(function(c){ return myCustomerIds[c.id]; });
+  }
+
+  var filtered = visibleCustomers.filter(function(c){
     var s = (c.first_name+' '+c.last_name+' '+(c.phone||'')+' '+(c.email||'')+' '+(c.address||'')).toLowerCase();
     return s.indexOf(q.toLowerCase()) !== -1;
   }).sort(function(a,b){
@@ -1097,7 +1122,7 @@ function CustomersPage(){
 
   return <div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:10}}>
-      <div style={{fontSize:22,fontWeight:800,color:'var(--navy)'}}>Customers</div>
+      <div style={{fontSize:22,fontWeight:800,color:'var(--navy)'}}>{auth.role==='owner'?'Customers':'My Clients'}</div>
       <div style={{display:'flex',gap:8}}>
         <input placeholder="Search customers…" value={q} onChange={function(e){setQ(e.target.value);}} style={{width:220}}/>
         <button className="btn btn-primary" onClick={function(){setShowNew(true);}}>+ Add customer</button>
@@ -2266,8 +2291,13 @@ function TeamSelfView(){
   var auth = useAuth();
   var d = useData();
   var myId = auth.profile.user_id;
+  var isSales = auth.role === 'sales';
   var _entries = React.useState([]), entries = _entries[0], setEntries = _entries[1];
   var _avail = React.useState(null), avail = _avail[0], setAvail = _avail[1];
+  // Custom date range — defaults to the last 30 days
+  var _from = React.useState(function(){ var d2=new Date(); d2.setDate(d2.getDate()-29); return d2.toISOString().split('T')[0]; });
+  var rangeFrom = _from[0], setRangeFrom = _from[1];
+  var _to = React.useState(today), rangeTo = _to[0], setRangeTo = _to[1];
 
   function reload(){
     sb.from('app_time_entries').select('*').eq('crew_user_id', myId).order('clock_in',{ascending:false}).then(function(r){ setEntries(r.data||[]); });
@@ -2291,12 +2321,33 @@ function TeamSelfView(){
     reload();
   }
 
-  var totalMs = entries.reduce(function(s,e){ var end = e.clock_out?new Date(e.clock_out):new Date(); return s + (end-new Date(e.clock_in)); },0);
-  var myJobs = d.jobs.filter(function(j){return j.crew_id===myId && j.status==='completed';});
-  var salesTotal = myJobs.reduce(function(s,j){return s+Number(j.price||0);},0);
+  // Entries/jobs/sales all scoped to the selected custom date range
+  var entriesInRange = entries.filter(function(e){ var d2=e.clock_in.split('T')[0]; return d2>=rangeFrom && d2<=rangeTo; });
+  var totalMs = entriesInRange.reduce(function(s,e){ var end = e.clock_out?new Date(e.clock_out):new Date(); return s + (end-new Date(e.clock_in)); },0);
+
+  var myJobs = d.jobs.filter(function(j){return j.crew_id===myId && j.status==='completed' && j.date>=rangeFrom && j.date<=rangeTo;});
+  var jobSales = myJobs.reduce(function(s,j){return s+Number(j.price||0);},0);
+
+  // For sales reps, "sales" means leads they won in this range (not jobs assigned to them)
+  var myWonLeads = d.leads.filter(function(l){return l.assigned_to===myId && l.stage==='won' && (l.updated_at||'').slice(0,10)>=rangeFrom && (l.updated_at||'').slice(0,10)<=rangeTo;});
+  var leadSales = myWonLeads.reduce(function(s,l){return s+Number(l.est_value||0);},0);
+
+  var salesTotal = isSales ? leadSales : jobSales;
 
   return <div>
-    <div style={{fontSize:22,fontWeight:800,color:'var(--navy)',marginBottom:16}}>My Hours</div>
+    <div style={{fontSize:22,fontWeight:800,color:'var(--navy)',marginBottom:12}}>{isSales ? 'My Sales & Hours' : 'My Hours'}</div>
+    <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:14,flexWrap:'wrap'}}>
+      <span style={{fontSize:11,fontWeight:700,color:'var(--t2)'}}>Range:</span>
+      <input type="date" value={rangeFrom} onChange={function(e){setRangeFrom(e.target.value);}} style={{width:150}}/>
+      <span style={{fontSize:11,color:'var(--t3)'}}>to</span>
+      <input type="date" value={rangeTo} onChange={function(e){setRangeTo(e.target.value);}} style={{width:150}}/>
+      <div style={{display:'flex',gap:6,marginLeft:'auto'}}>
+        <button className="btn btn-sm" onClick={function(){var d2=new Date();d2.setDate(d2.getDate()-6);setRangeFrom(d2.toISOString().split('T')[0]);setRangeTo(today());}}>7 days</button>
+        <button className="btn btn-sm" onClick={function(){var d2=new Date();d2.setDate(d2.getDate()-29);setRangeFrom(d2.toISOString().split('T')[0]);setRangeTo(today());}}>30 days</button>
+        <button className="btn btn-sm" onClick={function(){var d2=new Date();d2.setDate(d2.getDate()-89);setRangeFrom(d2.toISOString().split('T')[0]);setRangeTo(today());}}>90 days</button>
+      </div>
+    </div>
+
     <div className="card" style={{marginBottom:14,background:'var(--navy)',color:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
       <div>
         <div style={{fontSize:10,color:'var(--gold)',textTransform:'uppercase',fontWeight:700}}>Time clock</div>
@@ -2312,13 +2363,13 @@ function TeamSelfView(){
       </div>
     </div>
     <div className="g3" style={{marginBottom:14}}>
-      <StatCard label="Total hours logged" value={(totalMs/3600000).toFixed(1)}/>
-      <StatCard label="Jobs completed" value={myJobs.length}/>
-      <StatCard label="Sales generated" value={fmt$(salesTotal)} valColor="var(--green)"/>
+      <StatCard label="Hours logged (range)" value={(totalMs/3600000).toFixed(1)}/>
+      <StatCard label={isSales ? 'Leads won (range)' : 'Jobs completed (range)'} value={isSales ? myWonLeads.length : myJobs.length}/>
+      <StatCard label="Sales generated (range)" value={fmt$(salesTotal)} valColor="var(--green)"/>
     </div>
     <div className="card">
-      <div style={{fontWeight:700,marginBottom:10}}>Recent shifts</div>
-      {entries.slice(0,15).map(function(e){
+      <div style={{fontWeight:700,marginBottom:10}}>Shifts in range</div>
+      {entriesInRange.slice(0,30).map(function(e){
         var inD = new Date(e.clock_in), outD = e.clock_out?new Date(e.clock_out):null;
         var hrs = outD ? ((outD-inD)/3600000).toFixed(2) : 'In progress';
         return <div key={e.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:12}}>
@@ -2326,7 +2377,7 @@ function TeamSelfView(){
           <b>{hrs}{outD?' hrs':''}</b>
         </div>;
       })}
-      {!entries.length ? <div className="empty">No shifts logged yet</div> : null}
+      {!entriesInRange.length ? <div className="empty">No shifts in this range</div> : null}
     </div>
   </div>;
 }
@@ -2943,7 +2994,7 @@ function AppRoutes(){
   return <Routes>
     <Route path="/login" element={auth.session && auth.profile ? <Navigate to="/" replace/> : <LoginPage/>}/>
     <Route path="/" element={<ProtectedRoute><RoleHomeSwitch/></ProtectedRoute>}/>
-    <Route path="/customers" element={<ProtectedRoute roles={['owner','sales']}><CustomersPage/></ProtectedRoute>}/>
+    <Route path="/customers" element={<ProtectedRoute roles={['owner','sales','tech']}><CustomersPage/></ProtectedRoute>}/>
     <Route path="/leads" element={<ProtectedRoute roles={['owner','sales']}><LeadsPage/></ProtectedRoute>}/>
     <Route path="/quotes" element={<ProtectedRoute roles={['owner','sales']}><QuotesPage/></ProtectedRoute>}/>
     <Route path="/jobs" element={<ProtectedRoute><JobsPage/></ProtectedRoute>}/>
@@ -2953,7 +3004,7 @@ function AppRoutes(){
     <Route path="/equipment" element={<ProtectedRoute roles={['owner']}><EquipmentPage/></ProtectedRoute>}/>
     <Route path="/team" element={<ProtectedRoute><TeamPage/></ProtectedRoute>}/>
     <Route path="/reports" element={<ProtectedRoute roles={['owner']}><ReportsPage/></ProtectedRoute>}/>
-    <Route path="/map" element={<ProtectedRoute roles={['owner','sales']}><MapPage/></ProtectedRoute>}/>
+    <Route path="/map" element={<ProtectedRoute roles={['owner','sales','tech']}><MapPage/></ProtectedRoute>}/>
     <Route path="*" element={<Navigate to="/" replace/>}/>
   </Routes>;
 }
