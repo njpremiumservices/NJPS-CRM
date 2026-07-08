@@ -55,6 +55,18 @@ label{font-size:11px;font-weight:700;color:var(--t2);display:block;margin-bottom
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
 .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
 @media(max-width:900px){.g2,.g3,.g4{grid-template-columns:1fr;}}
+body{overflow-x:hidden;}
+.card{overflow-x:auto;}
+@media(max-width:860px){
+  body{font-size:15px;}
+  .btn{min-height:40px;padding:9px 14px;}
+  .btn-sm{min-height:34px;}
+  input,select,textarea{min-height:40px;font-size:16px;} /* 16px prevents iOS auto-zoom on focus */
+  table{font-size:13px;}
+  th,td{padding:8px 6px;}
+  .modal{max-width:100%!important;margin:0 8px;}
+  .modal-bd{padding:14px;}
+}
 .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;border-left:4px solid var(--navy);}
 .metric-lbl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;}
 .metric-val{font-size:24px;font-weight:800;color:var(--navy);margin-top:4px;}
@@ -673,22 +685,45 @@ var NAV_SECTIONS = {
   ]
 };
 
-function Sidebar(){
+// ── Mobile detection — re-checks on resize/orientation change ──────
+function useIsMobile(){
+  var _m = React.useState(function(){ return window.innerWidth <= 860; });
+  var isMobile = _m[0], setIsMobile = _m[1];
+  React.useEffect(function(){
+    function onResize(){ setIsMobile(window.innerWidth <= 860); }
+    window.addEventListener('resize', onResize);
+    return function(){ window.removeEventListener('resize', onResize); };
+  }, []);
+  return isMobile;
+}
+
+function Sidebar(props){
   var auth = useAuth();
   var loc = useLocation();
   var role = auth.role || 'tech';
   var sections = NAV_SECTIONS[role] || NAV_SECTIONS.tech;
   var name = auth.profile ? (auth.profile.first_name||'') : '';
+  var isMobile = props.isMobile;
+  var onNavigate = props.onNavigate || function(){};
 
-  return <div style={{width:'var(--sw)',minWidth:'var(--sw)',background:'var(--navy)',color:'#fff',display:'flex',flexDirection:'column',height:'100vh',position:'sticky',top:0}}>
-    <div style={{padding:'18px 16px',borderBottom:'1px solid rgba(255,255,255,.08)'}}>
+  return <div style={{
+    width: isMobile ? '78vw' : 'var(--sw)', maxWidth: isMobile ? 300 : 'none',
+    minWidth: isMobile ? 0 : 'var(--sw)',
+    background:'var(--navy)',color:'#fff',display:'flex',flexDirection:'column',
+    height:'100vh',
+    position: isMobile ? 'fixed' : 'sticky',
+    top:0, left:0, zIndex: isMobile ? 1000 : 'auto',
+    boxShadow: isMobile ? '4px 0 24px rgba(0,0,0,.3)' : 'none'
+  }}>
+    <div style={{padding:'18px 16px',borderBottom:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:38,height:38,background:'linear-gradient(135deg,var(--gold),var(--golde))',borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,color:'var(--navy)'}}>NJ</div>
+        <div style={{width:38,height:38,background:'linear-gradient(135deg,var(--gold),var(--golde))',borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,color:'var(--navy)',flexShrink:0}}>NJ</div>
         <div>
           <div style={{fontWeight:800,fontSize:13,lineHeight:1.2}}>NJ Premium</div>
           <div style={{fontSize:9,color:'var(--gold)',textTransform:'uppercase',letterSpacing:'.1em'}}>{role==='owner'?'Owner':role==='sales'?'Sales Rep':'Technician'}</div>
         </div>
       </div>
+      {isMobile ? <button onClick={onNavigate} style={{background:'none',border:'none',color:'#fff',fontSize:22,cursor:'pointer',padding:4}}>✕</button> : null}
     </div>
     <div style={{flex:1,overflowY:'auto',padding:'10px 10px'}}>
       {sections.map(function(sec){
@@ -696,11 +731,11 @@ function Sidebar(){
           <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,.4)',textTransform:'uppercase',letterSpacing:'.1em',padding:'0 10px',marginBottom:6}}>{sec.group}</div>
           {sec.items.map(function(it){
             var active = loc.pathname === it.to;
-            return <Link key={it.to} to={it.to} style={{
-              display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,
+            return <Link key={it.to} to={it.to} onClick={onNavigate} style={{
+              display:'flex',alignItems:'center',gap:10,padding:'10px 10px',borderRadius:8,
               color: active ? 'var(--navy)' : 'rgba(255,255,255,.85)',
               background: active ? 'var(--gold)' : 'transparent',
-              textDecoration:'none',fontSize:13,fontWeight: active?700:500,marginBottom:2
+              textDecoration:'none',fontSize:14,fontWeight: active?700:500,marginBottom:2
             }}>
               <span>{it.icon}</span>{it.label}
             </Link>;
@@ -719,9 +754,33 @@ function Sidebar(){
 }
 
 function Layout(props){
-  return <div style={{display:'flex'}}>
-    <Sidebar/>
-    <div style={{flex:1,minWidth:0,padding:'22px 26px',maxHeight:'100vh',overflowY:'auto'}}>
+  var isMobile = useIsMobile();
+  var _open = React.useState(false), drawerOpen = _open[0], setDrawerOpen = _open[1];
+  var loc = useLocation();
+  // Close the drawer automatically whenever the route changes
+  React.useEffect(function(){ setDrawerOpen(false); }, [loc.pathname]);
+
+  if (!isMobile){
+    return <div style={{display:'flex'}}>
+      <Sidebar isMobile={false}/>
+      <div style={{flex:1,minWidth:0,padding:'22px 26px',maxHeight:'100vh',overflowY:'auto'}}>
+        {props.children}
+      </div>
+    </div>;
+  }
+
+  return <div>
+    <div style={{position:'sticky',top:0,zIndex:900,background:'var(--navy)',padding:'12px 16px',display:'flex',alignItems:'center',gap:12}}>
+      <button onClick={function(){setDrawerOpen(true);}} style={{background:'none',border:'none',color:'#fff',fontSize:22,cursor:'pointer',padding:4}}>☰</button>
+      <div style={{width:28,height:28,background:'linear-gradient(135deg,var(--gold),var(--golde))',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,color:'var(--navy)',fontSize:12}}>NJ</div>
+      <div style={{color:'#fff',fontWeight:800,fontSize:14}}>NJ Premium</div>
+    </div>
+    {drawerOpen ? <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:999}} onClick={function(){setDrawerOpen(false);}}>
+      <div onClick={function(e){e.stopPropagation();}}>
+        <Sidebar isMobile={true} onNavigate={function(){setDrawerOpen(false);}}/>
+      </div>
+    </div> : null}
+    <div style={{padding:'16px 14px'}}>
       {props.children}
     </div>
   </div>;
@@ -1672,6 +1731,8 @@ function JobDetailModal(props){
   var _before = React.useState(job.photos_before||[]), before = _before[0], setBefore = _before[1];
   var _after = React.useState(job.photos_after||[]), after = _after[0], setAfter = _after[1];
   var _rating = React.useState(job.rating||0), rating = _rating[0], setRating = _rating[1];
+  var _callback = React.useState(job.is_callback||false), isCallback = _callback[0], setIsCallback = _callback[1];
+  var _damage = React.useState(job.damage_claim||false), damageClaim = _damage[0], setDamageClaim = _damage[1];
 
   function toggleCheck(i){ setChecklist(checklist.map(function(it,idx){ return idx===i ? Object.assign({},it,{done:!it.done}) : it; })); }
 
@@ -1686,7 +1747,7 @@ function JobDetailModal(props){
   async function save(){
     await d.update('v2_jobs', job.id, {
       status:status, notes:notes, checklist:checklist, photos_before:before, photos_after:after,
-      rating: rating || null
+      rating: rating || null, is_callback: isCallback, damage_claim: damageClaim
     });
     if (status==='completed' && job.status!=='completed' && job.price>0){
       await d.insert('v2_revenues', {
@@ -1732,6 +1793,16 @@ function JobDetailModal(props){
             style={{fontSize:24,background:'none',border:'none',cursor:'pointer',opacity: n<=rating?1:0.25}}>⭐</button>;
         })}
         {rating ? <span style={{fontSize:11,color:'var(--t2)',alignSelf:'center',marginLeft:6}}>{rating} / 5</span> : <span style={{fontSize:11,color:'var(--t3)',alignSelf:'center',marginLeft:6}}>Not rated</span>}
+      </div>
+      <div style={{display:'flex',gap:16,marginTop:10}}>
+        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer'}}>
+          <input type="checkbox" checked={isCallback} onChange={function(e){setIsCallback(e.target.checked);}} style={{width:'auto'}}/>
+          This was a callback (re-service on prior work)
+        </label>
+        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer',color:damageClaim?'var(--red)':'var(--t1)'}}>
+          <input type="checkbox" checked={damageClaim} onChange={function(e){setDamageClaim(e.target.checked);}} style={{width:'auto'}}/>
+          Damage claim filed
+        </label>
       </div>
     </div>}
 
@@ -1853,7 +1924,8 @@ function SchedulePage(){
     <div style={{fontSize:11,color:'var(--t3)',marginBottom:10}}>Drag a job card onto another day to reschedule it.</div>
 
     {mode==='week' ? (
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:8,minWidth:900,overflowX:'auto'}}>
+      <div style={{overflowX:'auto',paddingBottom:8}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:8,minWidth:900}}>
         {days.map(function(date){
           var dt = new Date(date+'T00:00:00');
           var isToday = date===today();
@@ -1867,6 +1939,7 @@ function SchedulePage(){
             {jobsForDay(date).map(JobCard)}
           </div>;
         })}
+      </div>
       </div>
     ) : (
       <div className="grid" style={{gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))'}}>
@@ -2291,6 +2364,10 @@ function TeamOwnerView(){
         var myJobs = d.jobs.filter(function(j){return j.crew_id===c.user_id && j.status==='completed' && j.date>=from && j.date<=to;});
         var sales = myJobs.reduce(function(s,j){return s+Number(j.price||0);},0);
         var isClocked = myEntries.some(function(e){return !e.clock_out;});
+        var callbacks = myJobs.filter(function(j){return j.is_callback;}).length;
+        var damageClaims = myJobs.filter(function(j){return j.damage_claim;}).length;
+        var rated = myJobs.filter(function(j){return j.rating;});
+        var avgRating = rated.length ? (rated.reduce(function(s,j){return s+Number(j.rating||0);},0)/rated.length).toFixed(1) : null;
 
         return <div key={c.user_id} className="card">
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
@@ -2301,6 +2378,10 @@ function TeamOwnerView(){
           <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Hours</span><b>{(totalMs/3600000).toFixed(1)}</b></div>
           <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Jobs completed</span><b>{myJobs.length}</b></div>
           <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Sales generated</span><b style={{color:'var(--green)'}}>{fmt$(sales)}</b></div>
+          <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Avg completion time</span><b>{myJobs.length ? (myJobs.reduce(function(s,j){return s+Number(j.duration||0);},0)/myJobs.length).toFixed(1)+'h' : '—'}</b></div>
+          <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Customer rating</span><b>{avgRating?avgRating+' ⭐':'—'}</b></div>
+          <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Callbacks</span><b style={{color:callbacks>0?'var(--amber)':'inherit'}}>{callbacks}</b></div>
+          <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Damage claims</span><b style={{color:damageClaims>0?'var(--red)':'inherit'}}>{damageClaims}</b></div>
         </div>;
       })}
     </div>
@@ -2408,6 +2489,16 @@ function ReportsPage(){
   var avgTicket = completedJobs.length ? completedJobs.reduce(function(s,j){return s+Number(j.price||0);},0)/completedJobs.length : 0;
   var equipCosts = d.expenses.filter(function(e){return e.equipment_id;}).reduce(function(s,e){return s+Number(e.amount||0);},0);
 
+  // Customer retention — % of customers with more than one completed job
+  var jobsByCustomer = {};
+  completedJobs.forEach(function(j){ jobsByCustomer[j.customer_id] = (jobsByCustomer[j.customer_id]||0)+1; });
+  var repeatCustomers = Object.values(jobsByCustomer).filter(function(n){return n>1;}).length;
+  var customersWithJobs = Object.keys(jobsByCustomer).length;
+  var retentionRate = customersWithJobs ? Math.round(repeatCustomers/customersWithJobs*100) : 0;
+
+  var totalCallbacks = d.jobs.filter(function(j){return j.is_callback;}).length;
+  var totalDamageClaims = d.jobs.filter(function(j){return j.damage_claim;}).length;
+
   // Revenue by month (last 6)
   var months = [];
   for (var i=5;i>=0;i--){ var dt=new Date(); dt.setMonth(dt.getMonth()-i); months.push(dt.toISOString().slice(0,7)); }
@@ -2474,10 +2565,15 @@ function ReportsPage(){
       </div>
     </div>
 
-    <div className="g3" style={{marginTop:14}}>
+    <div className="g4" style={{marginTop:14}}>
       <StatCard label="Equipment Costs" value={fmt$(equipCosts)}/>
       <StatCard label="Completed Jobs" value={completedJobs.length}/>
       <StatCard label="Active Customers" value={d.customers.length}/>
+      <StatCard label="Customer Retention" value={retentionRate+'%'} valColor={retentionRate>=30?'var(--green)':null} sub={repeatCustomers+' of '+customersWithJobs+' repeat customers'}/>
+    </div>
+    <div className="g2" style={{marginTop:14}}>
+      <StatCard label="Callbacks (all time)" value={totalCallbacks} valColor={totalCallbacks>0?'var(--amber)':null}/>
+      <StatCard label="Damage Claims (all time)" value={totalDamageClaims} valColor={totalDamageClaims>0?'var(--red)':null}/>
     </div>
   </div>;
 }
