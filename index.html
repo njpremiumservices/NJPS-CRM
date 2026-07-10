@@ -1490,8 +1490,8 @@ function LeadFormModal(props){
     <Field label="Customer">
       <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){ if(e.target.value==='__new__'){setIsNewCust(true);} else {setIsNewCust(false); upd('customer_id',e.target.value);} }}>
         <option value="">Select customer…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
         <option value="__new__">+ New customer…</option>
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
       </select>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
@@ -1683,8 +1683,8 @@ function QuoteFormModal(props){
         if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); setCustId(e.target.value); }
       }}>
         <option value="">Select customer…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
         <option value="__new__">+ New customer…</option>
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
       </select>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
@@ -1842,8 +1842,8 @@ function JobFormModal(props){
         if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id',e.target.value); }
       }}>
         <option value="">Select…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
         <option value="__new__">+ New customer…</option>
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
       </select>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
@@ -1939,10 +1939,21 @@ function JobDetailModal(props){
     props.onClose();
   }
 
+  async function deleteJob(){
+    if (!confirm('Delete this job? Use this when a client cancels. This cannot be undone.')) return;
+    await d.remove('v2_jobs', job.id);
+    props.onClose();
+  }
+
   var canEditFinancials = auth.role !== 'tech';
+  var canDelete = auth.role !== 'tech'; // techs can update/complete jobs but not delete them
 
   return <Modal open large title={c.first_name+' '+c.last_name+' — '+job.service_name} onClose={props.onClose} footer={
-    <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Save</button></React.Fragment>
+    <React.Fragment>
+      {canDelete ? <button className="btn btn-danger" onClick={deleteJob} style={{marginRight:'auto'}}>Delete job</button> : null}
+      <button className="btn" onClick={props.onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={save}>Save</button>
+    </React.Fragment>
   }>
     <div className="g2" style={{marginBottom:14}}>
       {canEditFinancials ? <React.Fragment>
@@ -2300,8 +2311,8 @@ function InvoiceFormModal(props){
         if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id',e.target.value); }
       }}>
         <option value="">Select…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
         <option value="__new__">+ New customer…</option>
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
       </select>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
@@ -3102,8 +3113,8 @@ function PinModal(props){
         if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id', e.target.value); }
       }}>
         <option value="">None</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
         <option value="__new__">+ New customer…</option>
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
       </select>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
