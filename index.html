@@ -190,6 +190,32 @@ function sortedCustomers(customers){
   });
 }
 
+// Returns only the customers a given user is actually allowed to see/select:
+// owners get everyone, sales reps get customers tied to their own leads,
+// technicians get customers tied to jobs assigned to them. Used everywhere
+// a customer dropdown appears, so a new hire can never browse the whole
+// company's client list through a "New job/quote/invoice/lead" form.
+function myScopedCustomers(d, auth){
+  if (!auth || !auth.profile || auth.role === 'owner') return sortedCustomers(d.customers);
+  var myId = auth.profile.user_id;
+  var myIds = {};
+  if (auth.role === 'sales'){
+    (d.leads||[]).filter(function(l){return l.assigned_to===myId;}).forEach(function(l){ myIds[l.customer_id]=true; });
+  }
+  if (auth.role === 'tech'){
+    (d.jobs||[]).filter(function(j){return j.crew_id===myId;}).forEach(function(j){ myIds[j.customer_id]=true; });
+  }
+  return sortedCustomers((d.customers||[]).filter(function(c){ return myIds[c.id]; }));
+}
+
+function getThisWeekRange(){
+  var now = new Date();
+  var day = now.getDay();
+  var start = new Date(now); start.setDate(now.getDate()-day);
+  var end = new Date(start); end.setDate(start.getDate()+6);
+  return { from: start.toISOString().split('T')[0], to: end.toISOString().split('T')[0] };
+}
+
 
 </script>
 <script type="text/babel" data-presets="react">
@@ -1464,7 +1490,7 @@ function LeadFormModal(props){
     <Field label="Customer">
       <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){ if(e.target.value==='__new__'){setIsNewCust(true);} else {setIsNewCust(false); upd('customer_id',e.target.value);} }}>
         <option value="">Select customer…</option>
-        {sortedCustomers(d.customers).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
         <option value="__new__">+ New customer…</option>
       </select>
     </Field>
@@ -1561,8 +1587,12 @@ function QuotesPage(){
 
 function QuoteFormModal(props){
   var d = useData();
+  var auth = useAuth();
   var existing = props.quote || null;
   var _custId = React.useState(existing ? existing.customer_id : ''), custId = _custId[0], setCustId = _custId[1];
+  var _newCust = React.useState(false), isNewCust = _newCust[0], setIsNewCust = _newCust[1];
+  var _nc = React.useState({first_name:'',last_name:'',phone:'',address:''});
+  var nc = _nc[0], setNc = _nc[1];
   var _items = React.useState(existing && existing.items && existing.items.length ? existing.items : [{service:'',qty:1,price:0}]), items = _items[0], setItems = _items[1];
   var _sig = React.useState(existing ? (existing.signature||'') : ''), sig = _sig[0], setSig = _sig[1];
   var canvasRef = React.useRef(null);
@@ -1614,7 +1644,12 @@ function QuoteFormModal(props){
   }
 
   async function save(){
-    if (!custId){ alert('Select a customer'); return; }
+    if (isNewCust){
+      if (!nc.first_name){ alert('Enter the new customer\'s first name'); return; }
+      var created = await d.insert('v2_customers', nc);
+      custId = created.id;
+    }
+    if (!custId){ alert('Select or add a customer'); return; }
     if (existing){
       await d.update('v2_quotes', existing.id, {
         customer_id:custId, items:items, subtotal:subtotal, tax:tax, total:total, signature:sig
@@ -1644,11 +1679,20 @@ function QuoteFormModal(props){
     </React.Fragment>
   }>
     <Field label="Customer">
-      <select value={custId} onChange={function(e){setCustId(e.target.value);}}>
+      <select value={isNewCust?'__new__':custId} onChange={function(e){
+        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); setCustId(e.target.value); }
+      }}>
         <option value="">Select customer…</option>
-        {sortedCustomers(d.customers).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        <option value="__new__">+ New customer…</option>
       </select>
     </Field>
+    {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
+      <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
+      <Field label="Last name"><input value={nc.last_name} onChange={function(e){setNc(Object.assign({},nc,{last_name:e.target.value}));}}/></Field>
+      <Field label="Phone"><input value={nc.phone} onChange={function(e){setNc(Object.assign({},nc,{phone:e.target.value}));}}/></Field>
+      <Field label="Address"><input value={nc.address} onChange={function(e){setNc(Object.assign({},nc,{address:e.target.value}));}}/></Field>
+    </div>}
     <div style={{fontWeight:700,fontSize:12,margin:'14px 0 8px'}}>Line items</div>
     {items.map(function(it,i){
       return <div key={i} style={{display:'flex',gap:6,marginBottom:6,alignItems:'center'}}>
@@ -1745,15 +1789,48 @@ function JobsPage(){
 
 function JobFormModal(props){
   var d = useData();
+  var auth = useAuth();
   var _crew = React.useState([]), crew = _crew[0], setCrew = _crew[1];
   React.useEffect(function(){ sb.from('app_crew').select('*').eq('status','active').then(function(r){setCrew(r.data||[]);}); }, []);
   var _f = React.useState({customer_id:'',service_name:'',date:today(),time:'09:00',duration:2,price:0,crew_id:'',notes:'',status:'scheduled'});
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(p){var n=Object.assign({},p);n[k]=v;return n;}); }
+  var _newCust = React.useState(false), isNewCust = _newCust[0], setIsNewCust = _newCust[1];
+  var _nc = React.useState({first_name:'',last_name:'',phone:'',address:''});
+  var nc = _nc[0], setNc = _nc[1];
+  var _repeat = React.useState('none'), repeat = _repeat[0], setRepeat = _repeat[1];
+  var _repeatEnd = React.useState(''), repeatEnd = _repeatEnd[0], setRepeatEnd = _repeatEnd[1]; // blank = ongoing
+
+  var REPEAT_DAYS = {weekly:7, biweekly:14, monthly:30, quarterly:91, seasonally:91};
 
   async function save(){
-    if (!f.customer_id){ alert('Select a customer'); return; }
-    await d.insert('v2_jobs', Object.assign({}, f, {photos_before:[], photos_after:[], checklist:[]}));
+    var custId = f.customer_id;
+    if (isNewCust){
+      if (!nc.first_name){ alert('Enter the new customer\'s first name'); return; }
+      var created = await d.insert('v2_customers', nc);
+      custId = created.id;
+    }
+    if (!custId){ alert('Select or add a customer'); return; }
+
+    var baseJob = Object.assign({}, f, {customer_id:custId, photos_before:[], photos_after:[], checklist:[], recur:repeat});
+    await d.insert('v2_jobs', baseJob);
+
+    // Generate future occurrences if this is a recurring job. If no end date
+    // is given, treat it as ongoing and generate one full year of occurrences
+    // — a reasonable, safe cap rather than creating records forever at once.
+    if (repeat !== 'none' && REPEAT_DAYS[repeat]){
+      var interval = REPEAT_DAYS[repeat];
+      var startDate = new Date(f.date+'T00:00:00');
+      var endDate = repeatEnd ? new Date(repeatEnd+'T00:00:00') : new Date(startDate.getTime() + 365*86400000);
+      var cursor = new Date(startDate.getTime() + interval*86400000);
+      var count = 0;
+      while (cursor <= endDate && count < 52){ // hard safety cap either way
+        var occDate = cursor.toISOString().split('T')[0];
+        await d.insert('v2_jobs', Object.assign({}, baseJob, {date: occDate}));
+        cursor = new Date(cursor.getTime() + interval*86400000);
+        count++;
+      }
+    }
     props.onClose();
   }
 
@@ -1761,11 +1838,20 @@ function JobFormModal(props){
     <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Save job</button></React.Fragment>
   }>
     <Field label="Customer">
-      <select value={f.customer_id} onChange={function(e){upd('customer_id',e.target.value);}}>
+      <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){
+        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id',e.target.value); }
+      }}>
         <option value="">Select…</option>
-        {sortedCustomers(d.customers).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        <option value="__new__">+ New customer…</option>
       </select>
     </Field>
+    {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
+      <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
+      <Field label="Last name"><input value={nc.last_name} onChange={function(e){setNc(Object.assign({},nc,{last_name:e.target.value}));}}/></Field>
+      <Field label="Phone"><input value={nc.phone} onChange={function(e){setNc(Object.assign({},nc,{phone:e.target.value}));}}/></Field>
+      <Field label="Address"><input value={nc.address} onChange={function(e){setNc(Object.assign({},nc,{address:e.target.value}));}}/></Field>
+    </div>}
     <Field label="Service">
       <select value={f.service_name} onChange={function(e){
         var svc=d.services.find(function(s){return s.name===e.target.value;});
@@ -1787,6 +1873,21 @@ function JobFormModal(props){
         {crew.map(function(c){return <option key={c.user_id} value={c.user_id}>{c.first_name} {c.last_name} ({c.role})</option>;})}
       </select>
     </Field>
+    <div className="g2" style={{background:'var(--bg)',padding:10,borderRadius:8,marginTop:4}}>
+      <Field label="Repeat">
+        <select value={repeat} onChange={function(e){setRepeat(e.target.value);}}>
+          <option value="none">Does not repeat</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Every 2 weeks</option>
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="seasonally">Seasonally</option>
+        </select>
+      </Field>
+      {repeat !== 'none' ? <Field label="Repeat until (blank = ongoing, 1 year)">
+        <input type="date" value={repeatEnd} onChange={function(e){setRepeatEnd(e.target.value);}}/>
+      </Field> : null}
+    </div>
     <Field label="Notes"><textarea rows={2} value={f.notes} onChange={function(e){upd('notes',e.target.value);}}/></Field>
   </Modal>;
 }
@@ -1809,6 +1910,8 @@ function JobDetailModal(props){
   var _rating = React.useState(job.rating||0), rating = _rating[0], setRating = _rating[1];
   var _callback = React.useState(job.is_callback||false), isCallback = _callback[0], setIsCallback = _callback[1];
   var _damage = React.useState(job.damage_claim||false), damageClaim = _damage[0], setDamageClaim = _damage[1];
+  var _date = React.useState(job.date||today()), jobDate = _date[0], setJobDate = _date[1];
+  var _time = React.useState(job.time||'09:00'), jobTime = _time[0], setJobTime = _time[1];
 
   function toggleCheck(i){ setChecklist(checklist.map(function(it,idx){ return idx===i ? Object.assign({},it,{done:!it.done}) : it; })); }
 
@@ -1823,7 +1926,8 @@ function JobDetailModal(props){
   async function save(){
     await d.update('v2_jobs', job.id, {
       status:status, notes:notes, checklist:checklist, photos_before:before, photos_after:after,
-      rating: rating || null, is_callback: isCallback, damage_claim: damageClaim
+      rating: rating || null, is_callback: isCallback, damage_claim: damageClaim,
+      date: jobDate, time: jobTime
     });
     if (status==='completed' && job.status!=='completed' && job.price>0){
       await d.insert('v2_revenues', {
@@ -1841,7 +1945,10 @@ function JobDetailModal(props){
     <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Save</button></React.Fragment>
   }>
     <div className="g2" style={{marginBottom:14}}>
-      <div><label>Date / Time</label><div>{fmtD(job.date)} · {fmt12(job.time)}</div></div>
+      {canEditFinancials ? <React.Fragment>
+        <Field label="Date"><input type="date" value={jobDate} onChange={function(e){setJobDate(e.target.value);}}/></Field>
+        <Field label="Time"><input type="time" value={jobTime} onChange={function(e){setJobTime(e.target.value);}}/></Field>
+      </React.Fragment> : <div><label>Date / Time</label><div>{fmtD(job.date)} · {fmt12(job.time)}</div></div>}
       <div><label>Address</label><div>{c.address||'—'}</div></div>
       {c.gate_code ? <div><label>Gate code</label><div>{c.gate_code}</div></div> : null}
       {canEditFinancials ? <div><label>Price</label><div style={{fontWeight:700,color:'var(--green)'}}>{fmt$(job.price)}</div></div> : null}
@@ -1966,19 +2073,27 @@ function SchedulePage(){
   var STATUS_COLOR = { scheduled:'var(--blue)', 'in-progress':'var(--gold)', completed:'var(--green)', cancelled:'var(--red)' };
 
   var _openJobId = React.useState(null), openJobId = _openJobId[0], setOpenJobId = _openJobId[1];
+  var isMobile = useIsMobile();
 
   function JobCard(j){
     var c = d.getCustomer(j.customer_id);
     var justDragged = React.useRef(false);
-    return <div key={j.id} draggable
-      onDragStart={function(){setDragId(j.id); justDragged.current=true;}}
-      onDragEnd={function(){ setTimeout(function(){justDragged.current=false;}, 150); }}
+    // Native HTML5 drag-and-drop doesn't work on touchscreens at all, so on
+    // mobile we skip it entirely and rely purely on tap-to-open — this also
+    // avoids any drag-detection logic ever blocking a tap on mobile.
+    var dragProps = isMobile ? {} : {
+      draggable: true,
+      onDragStart: function(){ setDragId(j.id); justDragged.current=true; },
+      onDragEnd: function(){ setTimeout(function(){ justDragged.current=false; }, 150); }
+    };
+    return <div key={j.id} {...dragProps}
       onClick={function(){ if(!justDragged.current) setOpenJobId(j.id); }}
-      style={{background:'#fff',border:'1px solid var(--border)',borderLeft:'3px solid '+(STATUS_COLOR[j.status]||'var(--border)'),borderRadius:8,padding:6,marginBottom:6,cursor:'pointer',fontSize:11}}>
+      style={{background:'#fff',border:'1px solid var(--border)',borderLeft:'3px solid '+(STATUS_COLOR[j.status]||'var(--border)'),borderRadius:8,padding:8,marginBottom:6,cursor:'pointer',fontSize:11,minHeight:isMobile?44:'auto'}}>
       <div style={{fontWeight:700,color:'var(--navy)'}}>{fmt12(j.time)}</div>
       <div>{c.first_name} {c.last_name}</div>
       <div style={{color:'var(--t3)'}}>{j.service_name}</div>
       {j.crew_id ? <div style={{color:'var(--blue)',marginTop:2}}>👤 {crewName(j.crew_id)}</div> : <div style={{color:'var(--red)'}}>Unassigned</div>}
+      {isMobile ? <div style={{fontSize:9,color:'var(--blue)',marginTop:4,fontWeight:700}}>Tap to edit</div> : null}
     </div>;
   }
 
@@ -2005,6 +2120,8 @@ function SchedulePage(){
         <input type="date" value={rangeTo} onChange={function(e){setRangeTo(e.target.value);}} style={{width:150}}/>
         {daysBetween(rangeFrom,rangeTo) > 90 ? <span style={{fontSize:11,color:'var(--red)'}}>Showing first 90 days of this range — narrow it down to see more precisely.</span> : null}
         <div style={{display:'flex',gap:6,marginLeft:'auto'}}>
+          <button className="btn btn-sm" onClick={function(){setRangeFrom(addDaysISO(today(),-6));setRangeTo(today());}}>Last 7 days</button>
+          <button className="btn btn-sm" onClick={function(){setRangeFrom(addDaysISO(today(),-29));setRangeTo(today());}}>Last 30 days</button>
           <button className="btn btn-sm" onClick={function(){setRangeFrom(today());setRangeTo(addDaysISO(today(),6));}}>This week</button>
           <button className="btn btn-sm" onClick={function(){setRangeFrom(today());setRangeTo(addDaysISO(today(),29));}}>Next 30 days</button>
           <button className="btn btn-sm" onClick={function(){setRangeFrom(today());setRangeTo(addDaysISO(today(),89));}}>Next 90 days</button>
@@ -2126,6 +2243,7 @@ function InvoicesPage(){
 
 function InvoiceFormModal(props){
   var d = useData();
+  var auth = useAuth();
   var existing = props.invoice || null;
   var _f = React.useState(existing ? {
     customer_id:existing.customer_id, service:existing.service||'', amount:existing.amount||0,
@@ -2133,9 +2251,17 @@ function InvoiceFormModal(props){
   } : {customer_id:'',service:'',amount:0,due:today(),notes:''});
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(p){var n=Object.assign({},p);n[k]=v;return n;}); }
+  var _newCust = React.useState(false), isNewCust = _newCust[0], setIsNewCust = _newCust[1];
+  var _nc = React.useState({first_name:'',last_name:'',phone:'',address:''});
+  var nc = _nc[0], setNc = _nc[1];
 
   async function save(){
-    if (!f.customer_id){ alert('Select a customer'); return; }
+    if (isNewCust){
+      if (!nc.first_name){ alert('Enter the new customer\'s first name'); return; }
+      var created = await d.insert('v2_customers', nc);
+      f = Object.assign({}, f, {customer_id: created.id});
+    }
+    if (!f.customer_id){ alert('Select or add a customer'); return; }
     if (existing){
       await d.update('v2_invoices', existing.id, f);
     } else {
@@ -2165,11 +2291,20 @@ function InvoiceFormModal(props){
     </React.Fragment>
   }>
     <Field label="Customer">
-      <select value={f.customer_id} onChange={function(e){upd('customer_id',e.target.value);}}>
+      <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){
+        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id',e.target.value); }
+      }}>
         <option value="">Select…</option>
-        {sortedCustomers(d.customers).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        <option value="__new__">+ New customer…</option>
       </select>
     </Field>
+    {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
+      <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
+      <Field label="Last name"><input value={nc.last_name} onChange={function(e){setNc(Object.assign({},nc,{last_name:e.target.value}));}}/></Field>
+      <Field label="Phone"><input value={nc.phone} onChange={function(e){setNc(Object.assign({},nc,{phone:e.target.value}));}}/></Field>
+      <Field label="Address"><input value={nc.address} onChange={function(e){setNc(Object.assign({},nc,{address:e.target.value}));}}/></Field>
+    </div>}
     <Field label="Service description"><input value={f.service} onChange={function(e){upd('service',e.target.value);}}/></Field>
     <div className="g2">
       <Field label="Amount ($)"><input type="number" value={f.amount} onChange={function(e){upd('amount',e.target.value);}}/></Field>
@@ -2384,9 +2519,36 @@ function TeamSelfView(){
   var leadSales = myWonLeads.reduce(function(s,l){return s+Number(l.est_value||0);},0);
 
   var salesTotal = isSales ? leadSales : jobSales;
+  var hourlyRate = Number(auth.profile.hourly_rate||0);
+
+  // "This week" pay — separate from the custom range above, always the
+  // current Sun–Sat week, so an employee always has a quick answer to
+  // "what did I earn this week" without needing to adjust any dates.
+  var thisWeek = getThisWeekRange();
+  var _weekEntries = React.useState([]), weekEntries = _weekEntries[0], setWeekEntries = _weekEntries[1];
+  React.useEffect(function(){
+    sb.from('app_time_entries').select('*').eq('crew_user_id', myId)
+      .gte('clock_in', thisWeek.from+'T00:00:00').lte('clock_in', thisWeek.to+'T23:59:59')
+      .then(function(r){ setWeekEntries(r.data||[]); });
+  }, []);
+  var weekMs = weekEntries.reduce(function(s,e){ var end=e.clock_out?new Date(e.clock_out):new Date(); return s+(end-new Date(e.clock_in)); },0);
+  var weekHours = weekMs/3600000;
+  var weekHourlyPay = weekHours * hourlyRate;
+  var weekWonLeads = d.leads.filter(function(l){return l.assigned_to===myId && l.stage==='won' && (l.updated_at||'').slice(0,10)>=thisWeek.from && (l.updated_at||'').slice(0,10)<=thisWeek.to;});
+  var weekCommission = isSales ? weekWonLeads.reduce(function(s,l){return s+Number(l.est_value||0);},0)*0.10 : 0;
+  var weekTotalPay = weekHourlyPay + weekCommission;
 
   return <div>
     <div style={{fontSize:22,fontWeight:800,color:'var(--navy)',marginBottom:12}}>{isSales ? 'My Sales & Hours' : 'My Hours'}</div>
+
+    <div className="card" style={{marginBottom:14,background:'linear-gradient(135deg,var(--navy),var(--navy2))',color:'#fff'}}>
+      <div style={{fontSize:10,color:'var(--gold)',textTransform:'uppercase',fontWeight:700,letterSpacing:'.06em'}}>This week ({fmtD(thisWeek.from)} – {fmtD(thisWeek.to)})</div>
+      <div style={{fontSize:28,fontWeight:800,marginTop:4}}>{fmt$(weekTotalPay)}</div>
+      <div style={{fontSize:11,color:'rgba(255,255,255,.7)',marginTop:4}}>
+        {hourlyRate>0 ? weekHours.toFixed(1)+' hrs × '+fmt$(hourlyRate)+'/hr = '+fmt$(weekHourlyPay) : 'No hourly rate set — ask the owner to add one'}
+        {isSales && weekCommission>0 ? ' + '+fmt$(weekCommission)+' commission' : ''}
+      </div>
+    </div>
     <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:14,flexWrap:'wrap'}}>
       <span style={{fontSize:11,fontWeight:700,color:'var(--t2)'}}>Range:</span>
       <input type="date" value={rangeFrom} onChange={function(e){setRangeFrom(e.target.value);}} style={{width:150}}/>
@@ -2449,6 +2611,20 @@ function TeamOwnerView(){
   }
   React.useEffect(reload, []);
 
+  async function updateRole(userId, role){
+    await sb.from('app_crew').update({role:role}).eq('user_id', userId);
+    reload();
+  }
+  async function updateStatus(userId, status){
+    await sb.from('app_crew').update({status:status}).eq('user_id', userId);
+    reload();
+  }
+  async function updateRate(userId, rate){
+    await sb.from('app_crew').update({hourly_rate: Number(rate)||0}).eq('user_id', userId);
+    reload();
+  }
+  var _detail = React.useState(null), detailPerson = _detail[0], setDetailPerson = _detail[1];
+
   return <div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:10}}>
       <div style={{fontSize:22,fontWeight:800,color:'var(--navy)'}}>Team &amp; Hours</div>
@@ -2487,11 +2663,34 @@ function TeamOwnerView(){
         var rated = myJobs.filter(function(j){return j.rating;});
         var avgRating = rated.length ? (rated.reduce(function(s,j){return s+Number(j.rating||0);},0)/rated.length).toFixed(1) : null;
 
-        return <div key={c.user_id} className="card">
+        var hourlyRate = Number(c.hourly_rate||0);
+        var estimatedPay = (totalMs/3600000)*hourlyRate + (c.role==='Sales Rep' ? sales*0.10 : 0);
+
+        return <div key={c.user_id} className="card" style={{cursor:'pointer'}} onClick={function(){setDetailPerson(c);}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
             <Avatar name={c.first_name} id={c.user_id}/>
-            <div style={{flex:1}}><div style={{fontWeight:700}}>{c.first_name} {c.last_name}</div><div style={{fontSize:11,color:'var(--t2)'}}>{c.role}</div></div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:700}}>{c.first_name} {c.last_name}</div>
+              <select value={c.role} onClick={function(e){e.stopPropagation();}} onChange={function(e){updateRole(c.user_id, e.target.value);}} style={{fontSize:11,padding:'3px 6px',marginTop:3,width:'auto'}}>
+                <option>Technician</option>
+                <option>Sales Rep</option>
+                <option>Crew lead</option>
+                <option>Supervisor</option>
+              </select>
+            </div>
             {isClocked ? <span className="badge bg">● Clocked in</span> : null}
+          </div>
+          <div style={{display:'flex',gap:6,marginBottom:8}} onClick={function(e){e.stopPropagation();}}>
+            <button className={cls('btn','btn-sm', c.status==='active'&&'btn-green')} onClick={function(){updateStatus(c.user_id,'active');}} style={{flex:1}}>Active</button>
+            <button className={cls('btn','btn-sm', c.status==='inactive'&&'btn-danger')} onClick={function(){updateStatus(c.user_id,'inactive');}} style={{flex:1}}>Inactive</button>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}} onClick={function(e){e.stopPropagation();}}>
+            <span style={{fontSize:11,color:'var(--t2)'}}>Rate ($/hr)</span>
+            <input type="number" defaultValue={hourlyRate} onBlur={function(e){updateRate(c.user_id, e.target.value);}} style={{width:70,padding:'3px 6px',fontSize:12}}/>
+          </div>
+          <div style={{background:'var(--goldl)',borderRadius:8,padding:8,marginBottom:8,textAlign:'center'}}>
+            <div style={{fontSize:10,color:'var(--goldd)',fontWeight:700,textTransform:'uppercase'}}>Est. pay (range)</div>
+            <div style={{fontSize:18,fontWeight:800,color:'var(--navy)'}}>{fmt$(estimatedPay)}</div>
           </div>
           <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Hours</span><b>{(totalMs/3600000).toFixed(1)}</b></div>
           <div style={{fontSize:12,display:'flex',justifyContent:'space-between',padding:'3px 0'}}><span>Jobs completed</span><b>{myJobs.length}</b></div>
@@ -2504,7 +2703,71 @@ function TeamOwnerView(){
       })}
     </div>
     {!crew.length ? <div className="empty">No crew members yet</div> : null}
+    {detailPerson ? <TeamDetailModal person={detailPerson} entries={entries} from={from} to={to} onClose={function(){setDetailPerson(null);}}/> : null}
   </div>;
+}
+
+function TeamDetailModal(props){
+  var d = useData();
+  var c = props.person;
+  var from = props.from, to = props.to;
+  var myEntries = props.entries.filter(function(e){return e.crew_user_id===c.user_id && e.clock_in.split('T')[0]>=from && e.clock_in.split('T')[0]<=to;})
+    .sort(function(a,b){return a.clock_in<b.clock_in?1:-1;});
+  var myJobs = d.jobs.filter(function(j){return j.crew_id===c.user_id && j.date>=from && j.date<=to;})
+    .sort(function(a,b){return (a.date||'')<(b.date||'')?1:-1;});
+  var completedJobs = myJobs.filter(function(j){return j.status==='completed';});
+  var totalMs = myEntries.reduce(function(s,e){var end=e.clock_out?new Date(e.clock_out):new Date();return s+(end-new Date(e.clock_in));},0);
+  var hourlyRate = Number(c.hourly_rate||0);
+  var sales = completedJobs.reduce(function(s,j){return s+Number(j.price||0);},0);
+  var estimatedPay = (totalMs/3600000)*hourlyRate + (c.role==='Sales Rep' ? sales*0.10 : 0);
+  var flaggedJobs = myJobs.filter(function(j){return j.is_callback || j.damage_claim;});
+
+  return <Modal open large title={c.first_name+' '+c.last_name+' — Full Stats'} onClose={props.onClose}>
+    <div className="g3" style={{marginBottom:16}}>
+      <StatCard label="Estimated pay (range)" value={fmt$(estimatedPay)} valColor="var(--green)"/>
+      <StatCard label="Hours worked" value={(totalMs/3600000).toFixed(1)}/>
+      <StatCard label="Jobs completed" value={completedJobs.length}/>
+    </div>
+    <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:'var(--navy)'}}>All shifts ({fmtD(from)} – {fmtD(to)})</div>
+    <div style={{maxHeight:200,overflowY:'auto',marginBottom:16}}>
+      {myEntries.length ? myEntries.map(function(e){
+        var inD = new Date(e.clock_in), outD = e.clock_out?new Date(e.clock_out):null;
+        var hrs = outD ? ((outD-inD)/3600000).toFixed(2) : 'In progress';
+        return <div key={e.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:12}}>
+          <span>{inD.toLocaleDateString('en-CA',{month:'short',day:'numeric'})} {inD.toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'})} → {outD?outD.toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'}):'now'}</span>
+          <b>{hrs}{outD?' hrs':''}</b>
+        </div>;
+      }) : <div className="empty" style={{padding:12}}>No shifts in this range</div>}
+    </div>
+    <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:'var(--navy)'}}>All jobs ({fmtD(from)} – {fmtD(to)})</div>
+    <div style={{maxHeight:200,overflowY:'auto',marginBottom:16}}>
+      {myJobs.length ? myJobs.map(function(j){
+        var cust = d.getCustomer(j.customer_id);
+        return <div key={j.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:12}}>
+          <span>{fmtD(j.date)} — {cust.first_name} {cust.last_name} ({j.service_name})</span>
+          <span style={{display:'flex',gap:6,alignItems:'center'}}>
+            <span className={cls('badge', j.status==='completed'?'bg':'bb')}>{j.status}</span>
+            <b style={{color:'var(--green)'}}>{fmt$(j.price)}</b>
+          </span>
+        </div>;
+      }) : <div className="empty" style={{padding:12}}>No jobs in this range</div>}
+    </div>
+    {flaggedJobs.length ? <React.Fragment>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:'var(--red)'}}>Flagged jobs (callbacks / damage claims)</div>
+      <div>
+        {flaggedJobs.map(function(j){
+          var cust = d.getCustomer(j.customer_id);
+          return <div key={j.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:12}}>
+            <span>{fmtD(j.date)} — {cust.first_name} {cust.last_name}</span>
+            <span style={{display:'flex',gap:4}}>
+              {j.is_callback ? <span className="badge ba">Callback</span> : null}
+              {j.damage_claim ? <span className="badge br">Damage claim</span> : null}
+            </span>
+          </div>;
+        })}
+      </div>
+    </React.Fragment> : null}
+  </Modal>;
 }
 
 
@@ -2788,6 +3051,7 @@ function MapPage(){
 
 function PinModal(props){
   var d = useData();
+  var auth = useAuth();
   var p = props.pending;
   var isNew = !p.id;
   var _f = React.useState({addr:p.addr||'', status:p.status||'not-visited', notes:p.notes||'', customer_id:p.customer_id||''});
@@ -2833,7 +3097,7 @@ function PinModal(props){
         if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id', e.target.value); }
       }}>
         <option value="">None</option>
-        {sortedCustomers(d.customers).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
+        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
         <option value="__new__">+ New customer…</option>
       </select>
     </Field>
