@@ -2074,20 +2074,25 @@ function SchedulePage(){
 
   var _openJobId = React.useState(null), openJobId = _openJobId[0], setOpenJobId = _openJobId[1];
   var isMobile = useIsMobile();
+  // A single shared ref for the whole page — NOT one per card. Hooks must be
+  // called the same number of times on every render of a component; calling
+  // React.useRef() inside JobCard (which runs once per job via .map()) would
+  // make the hook count vary with the number of jobs shown, which crashes
+  // React with "Rendered more hooks than during the previous render."
+  var justDraggedRef = React.useRef(false);
 
   function JobCard(j){
     var c = d.getCustomer(j.customer_id);
-    var justDragged = React.useRef(false);
     // Native HTML5 drag-and-drop doesn't work on touchscreens at all, so on
     // mobile we skip it entirely and rely purely on tap-to-open — this also
     // avoids any drag-detection logic ever blocking a tap on mobile.
     var dragProps = isMobile ? {} : {
       draggable: true,
-      onDragStart: function(){ setDragId(j.id); justDragged.current=true; },
-      onDragEnd: function(){ setTimeout(function(){ justDragged.current=false; }, 150); }
+      onDragStart: function(){ setDragId(j.id); justDraggedRef.current=true; },
+      onDragEnd: function(){ setTimeout(function(){ justDraggedRef.current=false; }, 150); }
     };
     return <div key={j.id} {...dragProps}
-      onClick={function(){ if(!justDragged.current) setOpenJobId(j.id); }}
+      onClick={function(){ if(!justDraggedRef.current) setOpenJobId(j.id); }}
       style={{background:'#fff',border:'1px solid var(--border)',borderLeft:'3px solid '+(STATUS_COLOR[j.status]||'var(--border)'),borderRadius:8,padding:8,marginBottom:6,cursor:'pointer',fontSize:11,minHeight:isMobile?44:'auto'}}>
       <div style={{fontWeight:700,color:'var(--navy)'}}>{fmt12(j.time)}</div>
       <div>{c.first_name} {c.last_name}</div>
