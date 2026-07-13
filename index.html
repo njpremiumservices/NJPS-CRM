@@ -841,6 +841,55 @@ function ProtectedRoute(props){
   return <Layout>{props.children}</Layout>;
 }
 
+// ── Searchable customer picker ──────────────────────────────────────
+// Replaces plain <select> customer dropdowns everywhere in the app with a
+// type-to-search box, so finding one client in a long list doesn't mean
+// scrolling through everyone. Always shows "+ New customer" first.
+function CustomerPicker(props){
+  var customers = props.customers || [];
+  var value = props.value;
+  var _open = React.useState(false), open = _open[0], setOpen = _open[1];
+  var _q = React.useState(''), q = _q[0], setQ = _q[1];
+  var boxRef = React.useRef(null);
+
+  var selected = customers.find(function(c){ return c.id===value; });
+  var label = props.isNew ? '+ New customer…' : (selected ? (selected.first_name+' '+selected.last_name) : '');
+
+  var filtered = customers.filter(function(c){
+    var s = (c.first_name+' '+c.last_name+' '+(c.phone||'')+' '+(c.address||'')).toLowerCase();
+    return s.indexOf(q.toLowerCase()) !== -1;
+  });
+
+  React.useEffect(function(){
+    function onDocClick(e){ if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onDocClick);
+    return function(){ document.removeEventListener('mousedown', onDocClick); };
+  }, []);
+
+  return <div ref={boxRef} style={{position:'relative'}}>
+    <input
+      value={open ? q : label}
+      placeholder={props.placeholder || 'Search customers…'}
+      onChange={function(e){ setQ(e.target.value); if(!open) setOpen(true); }}
+      onFocus={function(){ setOpen(true); setQ(''); }}
+      readOnly={false}
+    />
+    {open ? <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:50,background:'#fff',border:'1px solid var(--border)',borderRadius:8,maxHeight:240,overflowY:'auto',boxShadow:'0 8px 24px rgba(0,0,0,.12)',marginTop:2}}>
+      <div onMouseDown={function(e){e.preventDefault(); props.onNewCustomer(); setOpen(false); setQ('');}}
+        style={{padding:'9px 12px',cursor:'pointer',fontWeight:700,color:'var(--gold-d,var(--goldd))',borderBottom:'1px solid var(--border)',fontSize:13}}>
+        + New customer…
+      </div>
+      {filtered.length ? filtered.map(function(c){
+        return <div key={c.id} onMouseDown={function(e){e.preventDefault(); props.onChange(c.id); setOpen(false); setQ('');}}
+          style={{padding:'9px 12px',cursor:'pointer',fontSize:13,background: c.id===value?'var(--bg)':'#fff'}}>
+          <div style={{fontWeight:600}}>{c.first_name} {c.last_name}</div>
+          {c.address ? <div style={{fontSize:11,color:'var(--t3)'}}>{c.address}</div> : null}
+        </div>;
+      }) : <div style={{padding:'12px',fontSize:12,color:'var(--t3)'}}>No matching customers</div>}
+    </div> : null}
+  </div>;
+}
+
 
 </script>
 <script type="text/babel" data-presets="react">
@@ -1488,11 +1537,9 @@ function LeadFormModal(props){
     </React.Fragment>
   }>
     <Field label="Customer">
-      <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){ if(e.target.value==='__new__'){setIsNewCust(true);} else {setIsNewCust(false); upd('customer_id',e.target.value);} }}>
-        <option value="">Select customer…</option>
-        <option value="__new__">+ New customer…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
-      </select>
+      <CustomerPicker customers={myScopedCustomers(d, auth)} value={f.customer_id} isNew={isNewCust}
+        onChange={function(id){ setIsNewCust(false); upd('customer_id', id); }}
+        onNewCustomer={function(){ setIsNewCust(true); }}/>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
       <Field label="First name"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
@@ -1513,7 +1560,9 @@ function LeadFormModal(props){
       </Field>
       <Field label="Assigned to">
         <select value={f.assigned_to} onChange={function(e){upd('assigned_to',e.target.value);}}>
-          {props.crew.filter(function(c){return c.role==='Sales Rep'||c.role==='Crew lead';}).map(function(c){return <option key={c.user_id} value={c.user_id}>{c.first_name}</option>;})}
+          <option value="">Unassigned</option>
+          <option value={auth.profile.user_id}>Me ({auth.profile.first_name})</option>
+          {props.crew.filter(function(c){return c.status==='active' && c.user_id!==auth.profile.user_id;}).map(function(c){return <option key={c.user_id} value={c.user_id}>{c.first_name} {c.last_name} ({c.role})</option>;})}
         </select>
       </Field>
       <Field label="Estimated value ($)"><input type="number" value={f.est_value} onChange={function(e){upd('est_value',e.target.value);}}/></Field>
@@ -1679,13 +1728,9 @@ function QuoteFormModal(props){
     </React.Fragment>
   }>
     <Field label="Customer">
-      <select value={isNewCust?'__new__':custId} onChange={function(e){
-        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); setCustId(e.target.value); }
-      }}>
-        <option value="">Select customer…</option>
-        <option value="__new__">+ New customer…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
-      </select>
+      <CustomerPicker customers={myScopedCustomers(d, auth)} value={custId} isNew={isNewCust}
+        onChange={function(id){ setIsNewCust(false); setCustId(id); }}
+        onNewCustomer={function(){ setIsNewCust(true); }}/>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
       <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
@@ -1792,9 +1837,13 @@ function JobFormModal(props){
   var auth = useAuth();
   var _crew = React.useState([]), crew = _crew[0], setCrew = _crew[1];
   React.useEffect(function(){ sb.from('app_crew').select('*').eq('status','active').then(function(r){setCrew(r.data||[]);}); }, []);
-  var _f = React.useState({customer_id:'',service_name:'',date:today(),time:'09:00',duration:2,price:0,crew_id:'',notes:'',status:'scheduled'});
+  var _f = React.useState({customer_id:'',service_name:'',date:props.defaultDate||today(),time:'09:00',duration:2,price:0,crew_id:'',notes:'',status:'scheduled'});
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(p){var n=Object.assign({},p);n[k]=v;return n;}); }
+
+  // Warn (don't block) if this customer already has a job on the same date —
+  // helps catch accidental double-bookings without being too restrictive.
+  var existingSameDay = f.customer_id ? d.jobs.filter(function(j){return j.customer_id===f.customer_id && j.date===f.date && j.status!=='cancelled';}) : [];
   var _newCust = React.useState(false), isNewCust = _newCust[0], setIsNewCust = _newCust[1];
   var _nc = React.useState({first_name:'',last_name:'',phone:'',address:''});
   var nc = _nc[0], setNc = _nc[1];
@@ -1838,13 +1887,9 @@ function JobFormModal(props){
     <React.Fragment><button className="btn" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" onClick={save}>Save job</button></React.Fragment>
   }>
     <Field label="Customer">
-      <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){
-        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id',e.target.value); }
-      }}>
-        <option value="">Select…</option>
-        <option value="__new__">+ New customer…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
-      </select>
+      <CustomerPicker customers={myScopedCustomers(d, auth)} value={f.customer_id} isNew={isNewCust}
+        onChange={function(id){ setIsNewCust(false); upd('customer_id', id); }}
+        onNewCustomer={function(){ setIsNewCust(true); }}/>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
       <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
@@ -1852,6 +1897,9 @@ function JobFormModal(props){
       <Field label="Phone"><input value={nc.phone} onChange={function(e){setNc(Object.assign({},nc,{phone:e.target.value}));}}/></Field>
       <Field label="Address"><input value={nc.address} onChange={function(e){setNc(Object.assign({},nc,{address:e.target.value}));}}/></Field>
     </div>}
+    {existingSameDay.length ? <div style={{background:'var(--redl)',border:'1px solid var(--red)',borderRadius:8,padding:'8px 12px',marginBottom:10,fontSize:12,color:'var(--red)',fontWeight:600}}>
+      ⚠️ This customer already has a job on {fmtD(f.date)} ({existingSameDay[0].service_name} at {fmt12(existingSameDay[0].time)}) — check before double-booking.
+    </div> : null}
     <Field label="Service">
       <select value={f.service_name} onChange={function(e){
         var svc=d.services.find(function(s){return s.name===e.target.value;});
@@ -2084,7 +2132,10 @@ function SchedulePage(){
   var STATUS_COLOR = { scheduled:'var(--blue)', 'in-progress':'var(--gold)', completed:'var(--green)', cancelled:'var(--red)' };
 
   var _openJobId = React.useState(null), openJobId = _openJobId[0], setOpenJobId = _openJobId[1];
+  var _newJobDate = React.useState(null), newJobDate = _newJobDate[0], setNewJobDate = _newJobDate[1];
   var isMobile = useIsMobile();
+  var auth = useAuth();
+  var canCreate = auth.role !== 'tech';
   // A single shared ref for the whole page — NOT one per card. Hooks must be
   // called the same number of times on every render of a component; calling
   // React.useRef() inside JobCard (which runs once per job via .map()) would
@@ -2161,6 +2212,7 @@ function SchedulePage(){
               {dt.toLocaleDateString('en-CA',{weekday:'short'})}<br/>{dt.getDate()}
             </div>
             {jobsForDay(date).map(JobCard)}
+            {canCreate ? <button className="btn btn-sm" onClick={function(){setNewJobDate(date);}} style={{width:'100%',marginTop:4,fontSize:10,padding:'4px 0'}}>+ Add job</button> : null}
           </div>;
         })}
       </div>
@@ -2179,11 +2231,13 @@ function SchedulePage(){
               {dt.toLocaleDateString('en-CA',{weekday:'short',month:'short',day:'numeric'})}
             </div>
             {jobsThisDay.length ? jobsThisDay.map(JobCard) : <div style={{fontSize:10,color:'var(--t3)'}}>No jobs</div>}
+            {canCreate ? <button className="btn btn-sm" onClick={function(){setNewJobDate(date);}} style={{width:'100%',marginTop:4,fontSize:10,padding:'4px 0'}}>+ Add job</button> : null}
           </div>;
         })}
       </div>
     )}
     {openJobId ? <JobDetailModal id={openJobId} onClose={function(){setOpenJobId(null);}}/> : null}
+    {newJobDate ? <JobFormModal defaultDate={newJobDate} onClose={function(){setNewJobDate(null);}}/> : null}
   </div>;
 }
 
@@ -2307,13 +2361,9 @@ function InvoiceFormModal(props){
     </React.Fragment>
   }>
     <Field label="Customer">
-      <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){
-        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id',e.target.value); }
-      }}>
-        <option value="">Select…</option>
-        <option value="__new__">+ New customer…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
-      </select>
+      <CustomerPicker customers={myScopedCustomers(d, auth)} value={f.customer_id} isNew={isNewCust}
+        onChange={function(id){ setIsNewCust(false); upd('customer_id', id); }}
+        onNewCustomer={function(){ setIsNewCust(true); }}/>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
       <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
@@ -2399,7 +2449,7 @@ function ServiceFormModal(props){
 
 
 // ═══════════════════════════════════════════════════════════════
-// EQUIPMENT TRACKING
+// EQUIPMENT TRACKING — with hours-based service reminders
 // ═══════════════════════════════════════════════════════════════
 function EquipmentPage(){
   var d = useData();
@@ -2411,6 +2461,18 @@ function EquipmentPage(){
   function crewName(id){ var c = crew.find(function(x){return x.user_id===id;}); return c ? c.first_name : '—'; }
   var statusCfg = {}; EQUIPMENT_STATUSES.forEach(function(s){statusCfg[s.key]=s;});
 
+  async function logHours(equip, amount){
+    var newHours = Number(equip.hours_used||0) + Number(amount);
+    await d.update('v2_equipment', equip.id, {hours_used: newHours});
+  }
+
+  function serviceDue(e){
+    var interval = Number(e.service_interval_hours||100);
+    var used = Number(e.hours_used||0);
+    if (interval<=0) return false;
+    return (used % interval) >= interval*0.9 || used >= interval; // flag when within 10% of interval, or over
+  }
+
   return <div>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
       <div style={{fontSize:22,fontWeight:800,color:'var(--navy)'}}>Equipment</div>
@@ -2418,12 +2480,22 @@ function EquipmentPage(){
     </div>
     <div className="card">
       <table>
-        <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Assigned to</th><th>Next service</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Hours used</th><th>Assigned to</th><th>Next service</th><th></th></tr></thead>
         <tbody>{d.equipment.map(function(e){
           var sc = statusCfg[e.status]||statusCfg.ok;
+          var due = serviceDue(e);
           return <tr key={e.id}>
-            <td><b>{e.name}</b></td><td>{e.type}</td>
+            <td><b>{e.name}</b>{due ? <span className="badge br" style={{marginLeft:6}}>Service due</span> : null}</td>
+            <td>{e.type}</td>
             <td><span className={cls('badge','b'+sc.color)}>{sc.label}</span></td>
+            <td>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontWeight:700,color:due?'var(--red)':'var(--navy)'}}>{Number(e.hours_used||0).toFixed(1)}</span>
+                <span style={{fontSize:11,color:'var(--t3)'}}>/ {e.service_interval_hours||100}h</span>
+                <button className="btn btn-sm" onClick={function(){logHours(e,1);}}>+1h</button>
+                <button className="btn btn-sm" onClick={function(){logHours(e,0.5);}}>+30m</button>
+              </div>
+            </td>
             <td>{crewName(e.assigned_to)}</td>
             <td style={{color: e.next_service && e.next_service<=today() ? 'var(--red)' : 'var(--t2)'}}>{fmtD(e.next_service)}</td>
             <td><button className="btn btn-sm" onClick={function(){setEditing(e);}}>Edit</button></td>
@@ -2439,7 +2511,7 @@ function EquipmentPage(){
 function EquipmentFormModal(props){
   var d = useData();
   var existing = props.equipment;
-  var _f = React.useState(existing || {name:'',type:'Pressure washer',status:'ok',assigned_to:'',purchase_date:'',last_service:'',next_service:'',notes:''});
+  var _f = React.useState(existing || {name:'',type:'Pressure washer',status:'ok',assigned_to:'',purchase_date:'',last_service:'',next_service:'',notes:'',hours_used:0,service_interval_hours:100});
   var f = _f[0], setF = _f[1];
   function upd(k,v){ setF(function(p){var n=Object.assign({},p);n[k]=v;return n;}); }
 
@@ -2448,6 +2520,11 @@ function EquipmentFormModal(props){
     if (existing) await d.update('v2_equipment', existing.id, f);
     else await d.insert('v2_equipment', f);
     props.onClose();
+  }
+
+  async function markServiced(){
+    await d.update('v2_equipment', existing.id, {hours_used:0, last_service:today(), status:'ok'});
+    upd('hours_used', 0); upd('last_service', today()); upd('status','ok');
   }
 
   return <Modal open title={existing?'Edit equipment':'Add equipment'} onClose={props.onClose} footer={
@@ -2475,6 +2552,11 @@ function EquipmentFormModal(props){
       <Field label="Last service"><input type="date" value={f.last_service||''} onChange={function(e){upd('last_service',e.target.value);}}/></Field>
       <Field label="Next service"><input type="date" value={f.next_service||''} onChange={function(e){upd('next_service',e.target.value);}}/></Field>
     </div>
+    <div className="g2" style={{background:'var(--bg)',padding:10,borderRadius:8,marginTop:8}}>
+      <Field label="Hours used"><input type="number" step="0.5" value={f.hours_used||0} onChange={function(e){upd('hours_used',e.target.value);}}/></Field>
+      <Field label="Service every (hours)"><input type="number" value={f.service_interval_hours||100} onChange={function(e){upd('service_interval_hours',e.target.value);}}/></Field>
+    </div>
+    {existing ? <button className="btn btn-sm btn-green" style={{marginTop:10,width:'100%'}} onClick={markServiced}>✓ Mark as serviced (resets hours to 0)</button> : null}
     <Field label="Notes"><textarea rows={2} value={f.notes} onChange={function(e){upd('notes',e.target.value);}}/></Field>
   </Modal>;
 }
@@ -3006,6 +3088,9 @@ function MapPage(){
   var addModeRef = React.useRef(false);
   React.useEffect(function(){ addModeRef.current = addMode; }, [addMode]);
 
+  var searchInputRef = React.useRef(null);
+  var autocompleteRef = React.useRef(null);
+
   React.useEffect(function(){
     function init(){
       if (!window.google || !window.google.maps || !mapElRef.current) { setTimeout(init, 300); return; }
@@ -3025,6 +3110,33 @@ function MapPage(){
           setPending({lat:lat, lng:lng, addr:addr});
         });
       });
+
+      // Auto-center on the user's current location, if they allow it —
+      // falls back to the default Oakville view if denied or unavailable.
+      if (navigator.geolocation){
+        navigator.geolocation.getCurrentPosition(function(pos){
+          mapRef.current.setCenter({lat:pos.coords.latitude, lng:pos.coords.longitude});
+          mapRef.current.setZoom(15);
+        }, function(){ /* denied or unavailable — keep default view */ }, {timeout:6000});
+      }
+
+      // Address search box — Google Places Autocomplete, jumps the map to
+      // whatever address/place is selected.
+      if (searchInputRef.current && google.maps.places){
+        autocompleteRef.current = new google.maps.places.Autocomplete(searchInputRef.current, {
+          fields:['geometry','formatted_address'],
+          componentRestrictions:{country:'ca'}
+        });
+        autocompleteRef.current.bindTo('bounds', mapRef.current);
+        autocompleteRef.current.addListener('place_changed', function(){
+          var place = autocompleteRef.current.getPlace();
+          if (place.geometry && place.geometry.location){
+            mapRef.current.setCenter(place.geometry.location);
+            mapRef.current.setZoom(18);
+          }
+        });
+      }
+
       renderMarkers();
     }
     init();
@@ -3054,6 +3166,7 @@ function MapPage(){
       <div style={{fontSize:22,fontWeight:800,color:'var(--navy)'}}>Territory Map</div>
       <button className="btn btn-gold" onClick={startAdd}>{addMode?'Click a spot on the map…':'+ Mark house'}</button>
     </div>
+    <input ref={searchInputRef} placeholder="🔍 Search an address to jump to it…" style={{marginBottom:10}}/>
     <div className="tabs" style={{marginBottom:10}}>
       <button className={cls('tab',filter==='all'&&'active')} onClick={function(){setFilter('all');}}>All</button>
       {Object.keys(PIN_CFG).map(function(k){
@@ -3109,13 +3222,10 @@ function PinModal(props){
       </select>
     </Field>
     <Field label="Link to customer">
-      <select value={isNewCust?'__new__':f.customer_id} onChange={function(e){
-        if (e.target.value==='__new__'){ setIsNewCust(true); } else { setIsNewCust(false); upd('customer_id', e.target.value); }
-      }}>
-        <option value="">None</option>
-        <option value="__new__">+ New customer…</option>
-        {myScopedCustomers(d, auth).map(function(c){return <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>;})}
-      </select>
+      <CustomerPicker customers={myScopedCustomers(d, auth)} value={f.customer_id} isNew={isNewCust}
+        placeholder="None — search to link…"
+        onChange={function(id){ setIsNewCust(false); upd('customer_id', id); }}
+        onNewCustomer={function(){ setIsNewCust(true); }}/>
     </Field>
     {isNewCust && <div className="g2" style={{background:'var(--goldl)',padding:10,borderRadius:8,marginBottom:10}}>
       <Field label="First name *"><input value={nc.first_name} onChange={function(e){setNc(Object.assign({},nc,{first_name:e.target.value}));}}/></Field>
